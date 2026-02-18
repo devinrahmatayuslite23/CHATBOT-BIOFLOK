@@ -1,0 +1,12 @@
+Flask
+twilio
+python-dotenv
+gspread
+oauth2client
+google-api-python-client
+google-auth
+google-auth-oauthlib
+requests
+pytz
+apscheduler
+google-generativeai

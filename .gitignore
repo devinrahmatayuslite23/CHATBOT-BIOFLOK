@@ -1,0 +1,32 @@
+# Environment & Secrets
+.env
+*.pickle
+token.pickle
+credentials.json
+oauth_credentials.json
+google-creds.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Archive (old scripts)
+_archive/
+
+# Logs
+*.log
+ngrok.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git submodule
+fishfarmingwhatsappbot.git/
