@@ -277,7 +277,7 @@ pip install -r requirements.txt
 - `twilio` - WhatsApp API
 - `gspread` - Google Sheets API
 - `google-api-python-client` - Google Drive API
-- `google-generativeai` - Gemini AI
+- `google-genai` - Gemini AI SDK (Terbaru)
 - `APScheduler` - Background jobs
 
 ---
@@ -719,5 +719,5 @@ Private project for aquaculture research.
 
 ---
 
-**Last Updated:** 27 Januari 2026
-**Version:** 2.0 (OAuth-enabled)
+**Last Updated:** 20 Februari 2026
+**Version:** 3.0 (google-genai SDK 1.64.0 enabled)

@@ -9,4 +9,4 @@ google-auth-oauthlib
 requests
 pytz
 apscheduler
-google-generativeai
+google-genai

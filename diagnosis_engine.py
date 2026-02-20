@@ -17,7 +17,7 @@ _cache = {
     "rules": None,
     "matrix": None,
     "config_last_fetch": None,
-    "config_ttl_minutes": 30
+    "config_ttl_minutes": 1440
 }
 
 SCORING_DATA_WEIGHT = 0.7
@@ -33,8 +33,17 @@ def _is_config_cache_valid():
     return elapsed < timedelta(minutes=_cache["config_ttl_minutes"])
 
 
+def force_reload_config():
+    """Force clear cache so next fetch gets fresh rules."""
+    _cache["config_last_fetch"] = None
+    _cache["rules"] = None
+    _cache["matrix"] = None
+    print("🔄 Cache cleared via manual refresh.")
+    return True
+
+
 def _fetch_config():
-    """Fetch rules and matrix (cached 30 min)."""
+    """Fetch rules and matrix (cached)."""
     sh = drive.dashboard
     if not sh:
         raise Exception("Dashboard connection not available")
@@ -68,6 +77,7 @@ def _fetch_config():
     _cache["rules"] = rules
     _cache["matrix"] = matrix_data
     _cache["config_last_fetch"] = datetime.now()
+    print(f"🔄 Diagnosis Rules & Matrix reloaded from Spreadsheet! (Next refresh in {_cache['config_ttl_minutes']} min)")
     
     return rules, matrix_data
 
@@ -90,6 +100,78 @@ def _fetch_tab_data(rules):
             tab_data[tab_name] = []
     
     return tab_data
+
+_DEFAULT_SENSOR_DATA = {
+    "do": 4.5,          # Dissolved Oxygen (mg/L)
+    "ph": 7.5,          # pH Level
+    "temperature": 28.0,# Temperature (°C)
+    "ammonia": 0.0,     # Ammonia (mg/L) - Optional
+    "nitrate": 0.0,     # Nitrate (mg/L) - Optional
+    "salinity": 0,      # Salinity (ppt) - Optional
+    "turbidity": 0,     # Turbidity (NTU) - Optional
+    "orp": 0            # ORP (mV) - Optional
+}
+
+# --- EXPORTED FUNCTION FOR APP.PY ---
+def get_latest_sensor_data():
+    """
+    Fetch the absolute latest row from 'Water Quality' tab.
+    Used for direct notification without full diagnosis.
+    """
+    try:
+        # We need rules to identify the 'Water Quality' tab and its columns
+        rules, _ = _fetch_config() 
+        
+        # Filter rules to find the 'Water Quality' tab
+        water_quality_rules = [r for r in rules if r["tab_source"] == "Water Quality"]
+        if not water_quality_rules:
+            print("Warning: 'Water Quality' tab not found in rules. Returning default data.")
+            return _DEFAULT_SENSOR_DATA
+
+        # Fetch data for 'Water Quality' tab specifically
+        tab_data = _fetch_tab_data(water_quality_rules)
+        
+        water_quality_data = tab_data.get("Water Quality")
+        if not water_quality_data or len(water_quality_data) < 2: # Need headers + at least one row
+            print("Warning: No data or insufficient data in 'Water Quality' tab. Returning default data.")
+            return None # Return None to indicate no valid data found
+        
+        headers = water_quality_data[0]
+        latest_row = water_quality_data[-1] # Get the very last row
+        
+        # [NEW LOGIC] Check Source Column (Index 2 - 'ESP_Bioflok_01' etc)
+        # If it starts with '+' (Phone Number), it's from WhatsApp -> IGNORE NOTIFICATION
+        # If it contains 'ESP' or doesn't start with '+', it's likely a sensor -> PROCESS
+        
+        source_id = str(latest_row[2]) if len(latest_row) > 2 else ""
+        print(f"📡 New Data Detected. Source ID: {source_id}")
+        
+        if source_id.startswith("+"):
+            print("⛔ Data source is a phone number (WhatsApp Manual Input). Skipping notification.")
+            return None
+
+        # Map latest row values to a dictionary using headers
+        sensor_data = {}
+        for i, header in enumerate(headers):
+            if i < len(latest_row):
+                try:
+                    # Attempt to convert to float, otherwise keep as string
+                    sensor_data[header.lower()] = float(latest_row[i].replace(",", "."))
+                except ValueError:
+                    sensor_data[header.lower()] = latest_row[i]
+            else:
+                sensor_data[header.lower()] = None # Handle missing values
+        
+        # Ensure essential keys are present, using defaults if not found
+        final_sensor_data = _DEFAULT_SENSOR_DATA.copy()
+        for key in final_sensor_data:
+            if key in sensor_data and sensor_data[key] is not None:
+                final_sensor_data[key] = sensor_data[key]
+        
+        return final_sensor_data
+    except Exception as e:
+        print(f"Error fetching latest sensor data: {e}")
+        return None
 
 
 def _fetch_all_data():
@@ -441,8 +523,8 @@ def generate_diagnosa_explanation():
     """
     try:
         import os
-        import google.generativeai as genai
-        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+        from google import genai
+        client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
         
         # Get fresh diagnosis data
         rules, tab_data, matrix_data = _fetch_all_data()
@@ -494,8 +576,10 @@ def generate_diagnosa_explanation():
             "BATASAN: MAKSIMAL 200 kata. Padat dan langsung ke inti."
         )
         
-        model = genai.GenerativeModel("gemini-2.0-flash")
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt
+        )
         ai_text = response.text.strip()
         
         # Format for WhatsApp

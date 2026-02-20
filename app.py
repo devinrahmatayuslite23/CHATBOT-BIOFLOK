@@ -24,7 +24,7 @@ try:
     from ph_drift_detector import format_calibration_response, format_troubleshoot_response
     from feed_calculator import format_pakan_response, format_log_pakan_response, format_rekap_pakan_response
     from model_validator import format_confusion_matrix_response, format_lapor_hasil_response
-    from diagnosis_engine import format_diagnosa_response, format_diagnosa_detail, generate_diagnosa_explanation
+    from diagnosis_engine import format_diagnosa_response, format_diagnosa_detail, generate_diagnosa_explanation, force_reload_config
     IOT_MODULES_AVAILABLE = True
 except ImportError as e:
     print(f"⚠️ IoT modules not fully loaded: {e}")
@@ -74,6 +74,88 @@ def get_daily_menu_text(responses):
 
 # === Webhook Route ===
 
+@app.route("/webhook/config-update", methods=["GET", "POST"])
+def config_update_webhook():
+    """Endpoint for Google Apps Script to notify config changes."""
+    try:
+        force_reload_config()
+        print("🚀 Received update signal from Spreadsheet! Config reloaded.")
+        return "Config Reloaded", 200
+    except Exception as e:
+        print(f"⚠️ Webhook update error: {e}")
+        return f"Error: {e}", 500
+
+@app.route("/webhook/sensor-update", methods=["POST"])
+def sensor_update_webhook():
+    """
+    Endpoint for Google Apps Script to notify NEW SENSOR DATA.
+    Triggered when ESP32 writes to 'Water Quality' or 'Farm Control'.
+    """
+    try:
+        req_data = request.json
+        sheet_name = req_data.get("sheet", "Unknown") if req_data else "Unknown"
+        print(f"📡 New Sensor Data Signal from: {sheet_name}")
+
+        # 1. Fetch Latest Data
+        # We allow a small delay for GSheets to commit the write
+        import time
+        time.sleep(1) 
+        
+        # 2. Run Diagnosis & Check Alerts
+        from drive import run_diagnosis
+        # run_diagnosis() will internally log to 'AI Event Log'
+        # AND it calls 'notify_experts' if there is an EMERGENCY.
+        
+        # We can also force a specific notification if it's Farm Control (Status Change)
+        if sheet_name == "Farm Control":
+             from drive import control_tab
+             rows = control_tab.get_all_values()
+             if len(rows) > 1:
+                 last = rows[-1]
+                 # AC=3, DC=4, Pump=5, Aerator=6
+                 msg = f"🔧 *STATUS KONTROL UPDATE*\n\nAC: {last[3]}\nDC: {last[4]}\nPompa: {last[5]}\nAerator: {last[6]}"
+                 notify_experts("CONTROL-UPDATE", msg)
+
+        # For Water Quality (or fallback unknown), we handle the notification manually
+        if sheet_name == "Water Quality" or "Unknown" in sheet_name:
+             print("📡 Fetching latest sensor data for notification...")
+             from diagnosis_engine import get_latest_sensor_data
+             
+             # Ambil data sensor mentah terbaru
+             latest_data = get_latest_sensor_data()
+             
+             if latest_data:
+                 # Format Pesan Notifikasi
+                 timestamp = latest_data.get("timestamp", "Baru Saja")
+                 do_val = latest_data.get("do", "-")
+                 ph_val = latest_data.get("ph", "-")
+                 temp_val = latest_data.get("temperature", "-")
+
+                 msg = (
+                     f"📡 *DATA SENSOR MASUK!* 📡\n"
+                     f"🕒 {timestamp}\n\n"
+                     f"💧 DO: {do_val} mg/L\n"
+                     f"🧪 pH: {ph_val}\n"
+                     f"🌡️ Suhu: {temp_val} °C\n\n"
+                     f"_Balas 'diagnosa' untuk analisa lengkap._"
+                 )
+                 
+                 # Kirim WA ke Pakar
+                 notify_experts("SENSOR-IN", msg)
+                 
+                 # Tetap jalankan diagnosa di background (untuk log AI)
+                 # Tapi tidak perlu kirim notif double (kecuali emergency)
+                 # run_diagnosis_logic(latest_data) -> Opsional kalau mau
+             else:
+                 print("⚠️ Gagal mengambil data terbaru untuk notifikasi.")
+                 
+        return "Data Processed", 200
+
+        return "Data Processed", 200
+    except Exception as e:
+        print(f"⚠️ Sensor webhook error: {e}")
+        return f"Error: {e}", 500
+
 @app.route("/webhook", methods=["POST"])
 @app.route("/whatsapp", methods=["POST"])  # Support both endpoints
 def whatsapp_reply():
@@ -93,7 +175,7 @@ def whatsapp_reply():
 
     # [GLOBAL RULE 1] Navigasi 'q' / 'menu' -> RESET
     if msg_lower in ["q", "quit", "batal", "menu", "halo", "start", "hi", "test", "hello", "hallo", "p", "ping"]:
-        user_state[sender] = {"stage": "menu", "responses": {}, "media": {}, "form_type": None}
+        user_state[sender] = {"stage": "menu", "responses": {}, "media": {}, "form_type": None, "session_history": []}
         msg.body("🌊 **Smart Aquaculture System Ready.**\n"
                  "Silakan pilih aktivitas:\n\n"
                  "1️⃣ **Input Laporan Harian**\n"
@@ -197,15 +279,36 @@ def whatsapp_reply():
         
         # [NEW] IoT Monitoring Menu Options
         elif msg_lower == "6" or msg_lower.startswith("aerasi"):
-            # DO Analysis & Aeration Recommendation
+            # DO Analysis & Aeration Recommendation (AI Copilot Integration)
             if not IOT_MODULES_AVAILABLE:
                 msg.body("⚠️ Modul IoT belum tersedia.")
             else:
                 try:
-                    result = format_aerasi_response()
-                    msg.body(result + "\n\nKetik 'Menu' untuk kembali.")
+                    from do_analyzer import get_aeration_recommendation
+                    from ai_helper import start_do_copilot
+                    
+                    msg.body("🧠 Sedang menganalisa kondisi DO dengan asisten AI... Mohon tunggu.")
+                    ai_msg = resp.message()
+                    
+                    # 1. Get math analysis
+                    aeration_data = get_aeration_recommendation()
+                    
+                    if not aeration_data or aeration_data.get("aeration", None) is None:
+                        ai_msg.body("⚠️ Data DO belum cukup untuk dianalisa.")
+                        return reply(resp)
+                        
+                    # 2. Start Copilot Session
+                    initial_response, history = start_do_copilot(aeration_data)
+                    
+                    # 3. Save Context
+                    state["stage"] = "copilot_session"
+                    state["session_history"] = history
+                    
+                    # Add instructions
+                    full_response = f"{initial_response}\n\n_(Ketik 'Menu' kapan saja untuk mengakhiri sesi diskusi ini)_"
+                    ai_msg.body(full_response)
                 except Exception as e:
-                    msg.body(f"⚠️ Error: {e}")
+                    ai_msg.body(f"⚠️ Error: {e}")
         
         elif msg_lower == "7" or msg_lower.startswith("pakan"):
             # Feed Calculation
@@ -256,6 +359,17 @@ def whatsapp_reply():
                     msg.body(result)
                 except Exception as e:
                     msg.body(f"⚠️ Error diagnosa: {e}")
+
+        # [NEW] Manual Refresh Command
+        elif msg_lower in ["refresh", "reload", "update rules"]:
+            if not IOT_MODULES_AVAILABLE:
+                msg.body("⚠️ Modul IoT belum tersedia.")
+            else:
+                try:
+                    force_reload_config()
+                    msg.body("🔄 **Update Berhasil!**\n\nRules & Matrix Diagnosa baru saja diambil ulang dari Spreadsheet.\n\nSilakan coba diagnosa sekarang dengan data terbaru.")
+                except Exception as e:
+                    msg.body(f"⚠️ Gagal refresh: {e}")
         
         # AI Explanation (manual trigger)
         elif msg_lower == "analisa" or msg_lower == "analisis":
@@ -622,6 +736,31 @@ def whatsapp_reply():
                 msg.body(f"📸 Harap unggah foto bukti untuk: {current['name']}\n\n💡 Ketik 'Skip' untuk lewati foto ini.")
         
         return reply(resp)
+
+        return reply(resp)
+
+    # === HYPER-FOCUSED AI COPILOT ===
+    # This block handles interactive Q&A session specifically.
+    elif stage == "copilot_session":
+        try:
+            from ai_helper import chat_with_copilot
+            
+            history = state.get("session_history", [])
+            
+            # Send message to Gemini taking into account previous interactions
+            ai_reply_text, new_history = chat_with_copilot(history, msg_text)
+            
+            # Update history state
+            state["session_history"] = new_history
+            
+            msg.body(f"{ai_reply_text}\n\n_(Ketik 'Menu' untuk mengakhiri diskusi)_")
+        except Exception as e:
+             msg.body(f"⚠️ Kesalahan sistem saat berdiskusi: {e}\n\nKetik 'Menu' untuk kembali.")
+             
+    else:
+        # Fallback invalid stage
+        state["stage"] = "menu"
+        msg.body("❌ Maaf, saya tidak mengerti. Silakan ketik 'Menu'.")
 
     return reply(resp)
 
