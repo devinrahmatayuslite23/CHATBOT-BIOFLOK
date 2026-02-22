@@ -177,7 +177,7 @@ MATRIX_HEADERS = [
 ]
 
 # 8. AI Event Log Analysis (History of triggered diagnoses)
-EVENT_LOG_HEADERS = ["Timestamp", "Diagnosis", "Trigger Data", "Note"]
+EVENT_LOG_HEADERS = ["Timestamp", "Diagnosis", "Trigger Data", "Note", "Actual_Diagnosis", "Status_Match"]
 
 # Initialize Tabs
 water_tab = get_worksheet("Water Quality", WATER_HEADERS)
@@ -281,7 +281,7 @@ def run_diagnosis():
         ai_note = f"Auto-Diagnosis ({score}%): {top['matched']}/{top['total']} conditions matched"
         
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        event_log_tab.append_row([timestamp, diag_text, trigger_str, ai_note])
+        event_log_tab.append_row([timestamp, diag_text, trigger_str, ai_note, "", ""])
         print(f"🚨 Matrix Diagnosis: {diag_text[:50]} ({score}%) | Logged")
         
         # Emergency notification
