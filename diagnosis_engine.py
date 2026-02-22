@@ -303,6 +303,7 @@ def _match_matrix(snapshot, matrix_data):
         
         total_cond = 0
         matched_cond = 0
+        missed_params = []
         
         for param_name, col_idx in param_cols.items():
             if col_idx >= len(row): continue
@@ -313,6 +314,8 @@ def _match_matrix(snapshot, matrix_data):
             total_cond += 1
             if matrix_val == current_val:
                 matched_cond += 1
+            else:
+                missed_params.append(param_name)
         
         if total_cond == 0:
             continue
@@ -330,7 +333,8 @@ def _match_matrix(snapshot, matrix_data):
                 "match_ratio": match_ratio,
                 "matched": matched_cond,
                 "total": total_cond,
-                "frequency": freq_num
+                "frequency": freq_num,
+                "missed": missed_params
             })
     
     results.sort(key=lambda x: x["final_score"], reverse=True)
@@ -499,7 +503,14 @@ def format_diagnosa_detail():
             emoji = "🔴" if r["final_score"] >= 60 else "🟠" if r["final_score"] >= 40 else "🟡"
             msg += f"{emoji} *#{i+1} ({int(r['final_score'])}%)*\n"
             msg += f"{r['diagnosis']}\n"
-            msg += f"  Match: {r['matched']}/{r['total']} | Freq: {int(r['frequency'])}\n\n"
+            
+            # Formating missing parameters
+            miss_text = "Tidak ada"
+            if r['missed']:
+                miss_text = ", ".join(r['missed'])
+                    
+            msg += f"  Match: {r['matched']}/{r['total']} | Freq: {int(r['frequency'])}\n"
+            msg += f"  Miss: _{miss_text}_\n\n"
         
         # Show all rule results
         msg += "📊 *Rule Evaluation:*\n"

@@ -62,3 +62,16 @@ Data dibagi menjadi Tab Water Quality, Farm Control, dan **Multiple Biological T
 
 ## 4. TAB: AI MATRIX (Training Data)
 *Tetap satu tab rekapitulasi*
+
+---
+
+## 5. GOOGLE APPS SCRIPT CODE (BACKUP)
+Kumpulan kode Apps Script yang tertanam di Google Sheets untuk otomasi Sinkronisasi Matrix dan Webhook API.
+
+### A. `Rule2Matrix.gs`
+Kode untuk sinkronisasi Otomasi UI, Dropdown, dan Tata letak antar tab `Diagnosis_Rules` dan `Matrix Diagnosis`. 
+Tersimpan di: `Google_Apps_Script/Rule2Matrix.gs`
+
+### B. `server.gs`
+Kode untuk trigger pengiriman Webhook/HTTP POST ke Ngrok/Server Local. 
+Tersimpan di: `Google_Apps_Script/server.gs`
