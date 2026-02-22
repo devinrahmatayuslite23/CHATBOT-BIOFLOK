@@ -14,20 +14,7 @@ const COL_TAB_SOURCE = 3;
 const COL_OPERATOR = 4;    
 const MATRIX_START_COL = 4; 
 
-function onOpen() {
-  const ui = SpreadsheetApp.getUi();
-  ui.createMenu('⚙️ Sync Diagnosa')
-    .addItem('🗃️ Buka Database Manager', 'openDatabaseManager') 
-    .addSeparator() 
-    .addItem('📥 Tarik Import Matrix ke Rules', 'syncRulesFromMatrix')
-    .addItem('📤 Tembakan Data Rules ke Matrix', 'syncMatrixFromRules')
-    .addItem('🔧 Segarkan Semua Dropdown', 'refreshAllDropdowns')
-    .addToUi();
-    
-  ui.createMenu('🧪 AI Simulator')
-    .addItem('💻 Buka Layar Simulasi Mapped', 'openSimulatorUI')
-    .addToUi();
-}
+
 
 /**
  * =========================================================================
