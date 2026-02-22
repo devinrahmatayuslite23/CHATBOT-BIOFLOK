@@ -23,7 +23,6 @@ try:
     from do_analyzer import format_aerasi_response, get_aeration_recommendation
     from ph_drift_detector import format_calibration_response, format_troubleshoot_response
     from feed_calculator import format_pakan_response, format_log_pakan_response, format_rekap_pakan_response
-    from model_validator import format_confusion_matrix_response, format_lapor_hasil_response
     from diagnosis_engine import format_diagnosa_response, format_diagnosa_detail, generate_diagnosa_explanation, force_reload_config
     IOT_MODULES_AVAILABLE = True
 except ImportError as e:
@@ -394,23 +393,6 @@ def whatsapp_reply():
                 except Exception as e:
                     msg.body(f"⚠️ Error: {e}")
         
-        elif msg_lower.startswith("lapor hasil") or msg_lower.startswith("lapor actual"):
-            # Report actual outcome for model validation
-            if not IOT_MODULES_AVAILABLE:
-                msg.body("⚠️ Modul IoT belum tersedia.")
-            else:
-                try:
-                    # Parse: "lapor hasil DO NORMAL" or "lapor hasil pH DRIFT_UP"
-                    parts = msg_text.split()
-                    if len(parts) >= 4:
-                        pred_type = parts[2].upper()
-                        actual_value = parts[3].upper()
-                        result = format_lapor_hasil_response(pred_type, actual_value)
-                        msg.body(result + "\n\nKetik 'Menu' untuk kembali.")
-                    else:
-                        msg.body("Format: 'lapor hasil [TIPE] [NILAI]'\nContoh: 'lapor hasil DO LOW'\n\nTipe: DO, pH, FEED, AERATION")
-                except Exception as e:
-                    msg.body(f"⚠️ Error: {e}")
         
         # [NEW] Feed Tracker Commands
         elif msg_lower.startswith("log pakan"):
@@ -480,7 +462,7 @@ def whatsapp_reply():
                     msg.body(f"⚠️ Error: {e}")
             
         else:
-            msg.body("❓ Pilih angka 1-9 atau ketik:\n• 'aerasi' - cek DO & aerasi\n• 'pakan [berat]' - kalkulasi pakan\n• 'log pakan [kg]' - catat pakan harian\n• 'rekap pakan' - lihat total mingguan\n• 'kalibrasi' - status sensor pH\n• 'troubleshoot ph' - panduan pH\n• 'matrix [tipe]' - confusion matrix")
+            msg.body("❓ Pilih angka 1-9 atau ketik:\n• 'aerasi' - cek DO & aerasi\n• 'pakan [berat]' - kalkulasi pakan\n• 'log pakan [kg]' - catat pakan harian\n• 'rekap pakan' - lihat total mingguan\n• 'kalibrasi' - status sensor pH\n• 'troubleshoot ph' - panduan pH")
         return reply(resp)
 
 
