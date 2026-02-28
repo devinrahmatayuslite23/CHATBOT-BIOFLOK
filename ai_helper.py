@@ -56,7 +56,7 @@ def generate_recommendations(alerts, lang="en"):
 
     try:
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-2.0-flash',
             contents=prompt
         )
         content = response.text
@@ -80,7 +80,7 @@ def generate_ai_analysis(dashboard_dict, diagnosis_result, lang="id"):
     
     try:
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-2.0-flash',
             contents=prompt
         )
         return response.text.strip()
@@ -138,7 +138,7 @@ def chat_with_copilot(chat_history: list, user_message: str) -> tuple:
         
         # We format the history back to generative AI format
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-2.0-flash',
             contents=chat_history
         )
         ai_reply = response.text.strip()

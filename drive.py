@@ -672,37 +672,6 @@ def get_latest_logged_data():
         print(f"⚠️ Sync Error: {e}")
         return state
 
-def get_latest_logged_data():
-    """
-    Reads the absolute last rows from Water, Bio, and Control tabs 
-    to reconstruct the current state for the Dashboard.
-    """
-    state = {}
-    try:
-        # Water Quality
-        water_rows = water_tab.get_all_values()
-        if len(water_rows) > 1:
-            last = water_rows[-1]
-            state.update({"do": last[3], "ph": last[5], "tds": last[7], "temp": last[9]})
-        
-        # Bio
-        death_rows = dead_fish_tab.get_all_values()
-        if len(death_rows) > 1: state["dead_fish"] = death_rows[-1][2]
-        
-        feed_rows = feed_tab.get_all_values()
-        if len(feed_rows) > 1: state["feed_weight"] = feed_rows[-1][2]
-
-        # Control
-        control_rows = control_tab.get_all_values()
-        if len(control_rows) > 1:
-            last = control_rows[-1]
-            state.update({"ac_status": last[3], "dc_status": last[4], "pump_relay": last[5], "aerator_relay": last[6]})
-
-        return state
-    except Exception as e:
-        print(f"⚠️ Sync Error: {e}")
-        return state
-
 def check_and_sync_dashboard():
     """
     [UPDATED] Dashboard tab removed. Now triggers diagnosis from source tabs.

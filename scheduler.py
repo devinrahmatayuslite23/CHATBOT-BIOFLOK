@@ -4,7 +4,6 @@ from ai_helper import check_out_of_range, generate_recommendations, EXPERT_NUMBE
 from forms.daily_form import daily_form_id
 from forms.weekly_form import weekly_form_id
 from drive import log_reading, log_weekly, upload_photo
-import random
 import os
 
 from twilio.rest import Client
@@ -18,7 +17,11 @@ client = Client(TWILIO_SID, TWILIO_AUTH)
 
 user_state = {}
 last_activity = {}
-last_reactivation_times = {}
+
+# Nomor HP penerima reminder (dari .env, pisahkan dengan koma)
+_raw_recipients = os.getenv("REMINDER_RECIPIENTS", "")
+REMINDER_RECIPIENTS = [r.strip() for r in _raw_recipients.split(",") if r.strip()]
+
 
 scheduler = BackgroundScheduler()
 scheduler.start()
@@ -118,35 +121,20 @@ def notify_experts(user_phone, data, ai_insight=None):
             print(f"❌ Failed to alert expert {expert}: {e}")
 
 
-def generate_fake_daily_data():
-    return {
-        "do": round(random.uniform(3.0, 8.5), 1),
-        "ph": round(random.uniform(6.0, 8.5), 1),
-        "temperature": round(random.uniform(25, 33), 1),
-        "dead_fish": random.randint(0, 5),
-        "feeding_freq": random.choice([2, 3, 4]),
-        "feed_weight": random.randint(80, 150),
-        "inv_feed": random.randint(0, 50),
-        "inv_rest": random.randint(50, 300),
-        "general_video_photo": "https://drive.google.com/uc?id=fake-video-link-test"
-    }
-
 
 def send_daily_reminder():
-    recipients = ["+18027600986", "+628170073790"]
-    for number in recipients:
-        send_whatsapp_message(number, "🔔 Sekarang waktunya mengisi formulir harian!\n📨 It's time to fill out the daily form!")
+    for number in REMINDER_RECIPIENTS:
+        send_whatsapp_message(number, "🔔 Sekarang waktunya mengisi formulir harian!")
         user_state[number] = {
             "lang": None, "form_type": "daily", "responses": {},
             "media": {}, "stage": "lang_direct_daily"
         }
-        send_whatsapp_message(number, "🌐 Please select a language / Silakan pilih bahasa:\n1. 🇮🇩 Bahasa Indonesia\n2. 🇬🇧 English")
+        send_whatsapp_message(number, "🌐 Silakan pilih bahasa:\n1. 🇮🇩 Bahasa Indonesia\n2. 🇬🇧 English")
 
 
 def send_weekly_reminder():
     print("📆 Sending weekly reminder...")
-    recipients = ["+18027600986", "+6285692351792", "+628170073790"]
-    for number in recipients:
+    for number in REMINDER_RECIPIENTS:
         send_whatsapp_message(
             number,
             "📆 *Jangan lupa isi formulir mingguan hari ini!*\nSilakan balas pesan ini untuk memulai pengisian."
@@ -155,7 +143,9 @@ def send_weekly_reminder():
             "lang": None, "form_type": "weekly", "responses": {},
             "media": {}, "step": 0, "stage": "lang_direct_weekly"
         }
-        send_whatsapp_message(number, "🌐 Please select a language / Silakan pilih bahasa:\n1. 🇮🇩 Bahasa Indonesia\n2. 🇬🇧 English")
+        send_whatsapp_message(number, "🌐 Silakan pilih bahasa:\n1. 🇮🇩 Bahasa Indonesia\n2. 🇬🇧 English")
+
+
 
 
 def send_sandbox_reactivation_warning(phone):

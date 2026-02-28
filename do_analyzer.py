@@ -46,9 +46,13 @@ DO_DROP_THRESHOLDS = {
 
 # === DO TREND ANALYSIS ===
 
-def get_recent_do_readings(hours: int = 4) -> List[Dict]:
+def get_recent_do_readings(hours: int = 4, fallback: bool = False) -> List[Dict]:
     """
     Ambil data DO dari Water Quality tab dalam window waktu tertentu.
+    
+    Args:
+        hours: Window waktu dalam jam
+        fallback: Jika True, ambil SEMUA data tanpa filter waktu (fallback mode)
     
     Returns:
         List of dict dengan keys: timestamp, do_value, device
@@ -61,23 +65,21 @@ def get_recent_do_readings(hours: int = 4) -> List[Dict]:
         if len(all_data) < 2:
             return []
         
-        headers = all_data[0]
         readings = []
         cutoff_time = datetime.now() - timedelta(hours=hours)
         
-        # Find column indices
+        # Column indices
         ts_idx = 0  # Timestamp
         do_idx = 3  # DO column (index 3)
         device_idx = 2  # Device
         
         for row in all_data[1:]:
             try:
-                # Parse timestamp
                 ts_str = row[ts_idx] if len(row) > ts_idx else ""
                 if not ts_str:
                     continue
                 
-                # [FIX] Robust Timestamp Parsing
+                # Robust Timestamp Parsing
                 ts = None
                 formats = [
                     "%Y-%m-%d %H:%M:%S", 
@@ -85,7 +87,6 @@ def get_recent_do_readings(hours: int = 4) -> List[Dict]:
                     "%m/%d/%Y %H:%M:%S",
                     "%Y/%m/%d %H:%M:%S"
                 ]
-                
                 for fmt in formats:
                     try:
                         ts = datetime.strptime(ts_str, fmt)
@@ -94,14 +95,13 @@ def get_recent_do_readings(hours: int = 4) -> List[Dict]:
                         continue
                 
                 if not ts:
-                    # Determine why it failed (debug print)
                     print(f"⚠️ Failed to parse TS: {ts_str}")
                     continue
 
-                if ts < cutoff_time:
+                # Filter waktu hanya jika BUKAN fallback mode
+                if not fallback and ts < cutoff_time:
                     continue
                 
-                # Get DO value
                 do_str = row[do_idx] if len(row) > do_idx else ""
                 if not do_str or do_str == "-":
                     continue
@@ -117,13 +117,13 @@ def get_recent_do_readings(hours: int = 4) -> List[Dict]:
             except (ValueError, IndexError):
                 continue
         
-        # Sort by timestamp
         readings.sort(key=lambda x: x["timestamp"])
         return readings
         
     except Exception as e:
         print(f"⚠️ Error getting DO readings: {e}")
         return []
+
 
 
 def calculate_do_drop_rate(readings: List[Dict]) -> Optional[float]:
@@ -161,11 +161,23 @@ def calculate_do_drop_rate(readings: List[Dict]) -> Optional[float]:
 def analyze_do_trend() -> Dict:
     """
     Analisis lengkap trend DO dan deteksi drop.
+    Jika tidak ada data dalam window 24 jam, otomatis fallback ke data DO terakhir yang ada.
     
     Returns:
-        Dict dengan keys: status, current_do, drop_rate, alert_level, recommendation
+        Dict dengan keys: status, current_do, drop_rate, alert_level, recommendation,
+                          data_timestamp, is_fallback
     """
-    readings = get_recent_do_readings(hours=DO_DROP_THRESHOLDS["analysis_window_hours"])
+    window_hours = DO_DROP_THRESHOLDS["analysis_window_hours"]
+    readings = get_recent_do_readings(hours=window_hours)
+    is_fallback = False
+
+    # [OPSI B] Fallback: jika tidak ada data dalam window, ambil data terakhir yang ada
+    if not readings:
+        print(f"⚠️ Tidak ada data DO dalam {window_hours} jam, mencoba fallback ke data terakhir...")
+        readings = get_recent_do_readings(fallback=True)
+        if readings:
+            is_fallback = True
+            print(f"✅ Fallback berhasil, ditemukan {len(readings)} data historis.")
     
     if not readings:
         return {
@@ -173,17 +185,19 @@ def analyze_do_trend() -> Dict:
             "current_do": None,
             "drop_rate": None,
             "alert_level": "UNKNOWN",
-            "recommendation": "Tidak ada data DO tersedia. Pastikan sensor terhubung."
+            "recommendation": "Tidak ada data DO tersedia. Pastikan sensor terhubung.",
+            "data_timestamp": None,
+            "is_fallback": False
         }
     
     current_do = readings[-1]["do_value"]
+    data_timestamp = readings[-1]["timestamp"]  # Timestamp data DO terbaru
     drop_rate = calculate_do_drop_rate(readings)
     
     # Determine alert level
     alert_level = "NORMAL"
     recommendation = "Kondisi DO normal."
     
-    # Check current level
     if current_do <= DO_DROP_THRESHOLDS["critical_level"]:
         alert_level = "CRITICAL"
         recommendation = f"⚠️ KRITIS! DO sangat rendah ({current_do} mg/L). Aktifkan aerasi darurat segera!"
@@ -191,7 +205,6 @@ def analyze_do_trend() -> Dict:
         alert_level = "WARNING"
         recommendation = f"⚡ DO rendah ({current_do} mg/L). Tingkatkan aerasi."
     
-    # Check drop rate
     if drop_rate is not None and drop_rate < 0:
         abs_rate = abs(drop_rate)
         if abs_rate >= DO_DROP_THRESHOLDS["critical_drop_rate"]:
@@ -209,8 +222,11 @@ def analyze_do_trend() -> Dict:
         "alert_level": alert_level,
         "recommendation": recommendation,
         "data_points": len(readings),
-        "time_range_hours": DO_DROP_THRESHOLDS["analysis_window_hours"]
+        "time_range_hours": window_hours,
+        "data_timestamp": data_timestamp,
+        "is_fallback": is_fallback
     }
+
 
 
 # === AERATION CALCULATOR ===
@@ -304,28 +320,87 @@ def get_aeration_recommendation(pond_config: Optional[Dict] = None) -> Dict:
         safety_factor=config.get("safety_factor", 1.2)
     )
     
-    # Generate message
-    if trend["alert_level"] == "CRITICAL":
-        urgency = "🚨 DARURAT"
-    elif trend["alert_level"] == "WARNING":
-        urgency = "⚠️ PERHATIAN"
+    # Format timestamp info untuk output
+    ts = trend.get("data_timestamp")
+    is_fallback = trend.get("is_fallback", False)
+    window_hours = trend.get("time_range_hours", 24)
+    data_points = trend.get("data_points", 0)
+
+    if ts:
+        now = datetime.now()
+        selisih = now - ts
+        total_menit = int(selisih.total_seconds() // 60)
+        jam = total_menit // 60
+        menit = total_menit % 60
+
+        ts_str = ts.strftime("%d %b %Y, %H:%M")
+        if jam > 0:
+            umur_data = f"{jam} jam {menit} menit lalu"
+        elif menit > 0:
+            umur_data = f"{menit} menit lalu"
+        else:
+            umur_data = "baru saja"
+
+        if is_fallback:
+            info_data = (
+                f"📋 *Sumber Data:*\n"
+                f"• Data terakhir: {ts_str} ({umur_data})\n"
+                f"• Jumlah titik data: {data_points} pembacaan\n"
+                f"⚠️ _Tidak ada data baru dalam {window_hours} jam — menggunakan data historis_"
+            )
+        else:
+            info_data = (
+                f"📋 *Sumber Data:*\n"
+                f"• Data terbaru: {ts_str} ({umur_data})\n"
+                f"• Rentang analisis: {window_hours} jam terakhir ({data_points} pembacaan)"
+            )
     else:
-        urgency = "ℹ️ INFO"
-    
-    message = f"""{urgency} - Status Aerasi
+        info_data = "📋 *Sumber Data:* Tidak diketahui"
 
-📊 Kondisi DO Saat Ini:
-• Level: {trend['current_do']} mg/L
-• Trend: {trend['drop_rate'] if trend['drop_rate'] else 'N/A'} mg/L/jam
-• Status: {trend['alert_level']}
+    # Status level dalam bahasa natural
+    level_info = {
+        "NORMAL": "✅ Normal — kondisi DO baik",
+        "WARNING": "⚠️ Waspada — DO mulai rendah",
+        "CRITICAL": "🚨 Kritis — perlu tindakan segera",
+        "UNKNOWN": "❓ Tidak diketahui"
+    }
+    status_natural = level_info.get(trend["alert_level"], trend["alert_level"])
 
-🔧 Kebutuhan Aerasi:
-• Defisit O2: {aeration['oxygen_deficit_kg']} kg
-• Respirasi ikan/jam: {aeration['hourly_respiration_kg']} kg O2
-• Total kebutuhan: {aeration['total_o2_need_kg']} kg O2
-• Rekomendasi aerator: {aeration['recommended_aerator_hp']} HP
+    # Trend DO dalam bahasa natural
+    dp = trend.get("drop_rate")
+    if dp is None:
+        trend_natural = "Tidak cukup data untuk hitung tren"
+    elif dp > 0.05:
+        trend_natural = f"📈 Naik +{abs(dp)} mg/L/jam"
+    elif dp < -0.05:
+        trend_natural = f"📉 Turun -{abs(dp)} mg/L/jam (perlu perhatian)"
+    else:
+        trend_natural = f"➡️ Stabil ({dp} mg/L/jam)"
 
-💡 {trend['recommendation']}"""
+    # Header urgency
+    if trend["alert_level"] == "CRITICAL":
+        header = "🚨 *DARURAT - STATUS AERASI*"
+    elif trend["alert_level"] == "WARNING":
+        header = "⚠️ *WASPADA - STATUS AERASI*"
+    else:
+        header = "💨 *CEK AERASI KOLAM*"
+
+    message = (
+        f"{header}\n\n"
+        f"📋 *Sumber Data*\n"
+        f"{info_data}\n\n"
+        f"🌊 *Kondisi DO*\n"
+        f"• Level: *{trend['current_do']} mg/L*\n"
+        f"• Tren: {trend_natural}\n"
+        f"• Status: {status_natural}\n\n"
+        f"🔧 *Kebutuhan Aerasi*\n"
+        f"• Defisit O₂: {aeration['oxygen_deficit_kg']} kg\n"
+        f"• Total/jam: {aeration['total_o2_need_kg']} kg O₂\n"
+        f"• Aerator: *{aeration['recommended_aerator_hp']} HP*\n\n"
+        f"💡 {trend['recommendation']}\n\n"
+        f"_Ketik pertanyaan untuk diskusi lanjut_"
+    )
+
     
     return {
         "trend": trend,

@@ -579,26 +579,22 @@ def generate_diagnosa_explanation():
         
         prompt += (
             "TUGASMU:\n"
-            "1. Jelaskan MENGAPA diagnosa ini masuk akal berdasarkan data\n"
+            "1. Jelaskan MENGAPA diagnosa ini masuk akal\n"
             "2. Hubungkan antar parameter (misal: suhu tinggi → DO turun)\n"
-            "3. Berikan 3-4 langkah KONKRIT yang harus dilakukan petambak SEKARANG\n"
-            "4. Sebutkan risiko jika tidak ditangani\n\n"
-            "FORMAT: Gunakan emoji dan bullet points. Bahasa Indonesia yang mudah dimengerti.\n"
-            "BATASAN: MAKSIMAL 200 kata. Padat dan langsung ke inti."
+            "3. Berikan 3 langkah KONKRIT yang harus dilakukan SEKARANG\n"
+            "4. Sebutkan 1 risiko jika tidak ditangani\n\n"
+            "FORMAT: Emoji + bullet points. Bahasa Indonesia. Mudah dimengerti petambak.\n"
+            "BATASAN: MAKSIMAL 120 kata. Sangat padat, langsung ke inti. Jangan bertele-tele."
         )
         
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-2.0-flash',
             contents=prompt
         )
         ai_text = response.text.strip()
         
-        # Format for WhatsApp
-        msg = "🧠 *PENJELASAN AI:*\n"
-        msg += "━━━━━━━━━━━━━━━━━━━━\n\n"
-        msg += ai_text + "\n\n"
-        msg += "━━━━━━━━━━━━━━━━━━━━\n"
-        msg += "Ketik 'Menu' untuk kembali."
+        # Format ringkas untuk WhatsApp (max 1500 char total)
+        msg = f"🧠 *PENJELASAN AI*\n\n{ai_text}\n\nKetik 'Menu' untuk kembali."
         
         return msg
         

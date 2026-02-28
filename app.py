@@ -7,14 +7,13 @@ from drive import log_reading, log_weekly, upload_photo, get_latest_daily_data, 
 from scheduler import (
     send_whatsapp_message,
     notify_experts,
-    generate_fake_daily_data,
     send_daily_reminder,
     schedule_jobs,
-    update_last_activity,
-    update_last_reactivation
+    update_last_activity
 )
 import os
 import re
+import threading
 from datetime import datetime
 from ai_helper import check_out_of_range, generate_recommendations # [MODIFIKASI] Import AI helper untuk fitur manual
 
@@ -32,6 +31,37 @@ except ImportError as e:
 load_dotenv()
 app = Flask(__name__)
 user_state = {}
+
+# === Async Reply Helper ===
+
+def send_async_reply(to_number: str, message: str):
+    """Kirim pesan WA via Twilio REST API (untuk dipakai di background thread)."""
+    # Twilio WhatsApp limit: 1600 karakter
+    MAX_CHARS = 1500
+    if len(message) > MAX_CHARS:
+        message = message[:MAX_CHARS - 30].rsplit("\n", 1)[0] + "\n\n_...(pesan dipotong)_"
+
+    # Selalu print ke terminal dulu (bisa dipantau meski Twilio limit habis)
+    print(f"\n{'='*50}")
+    print(f"📋 [ASYNC OUTPUT] → {to_number}")
+    print(f"{'='*50}")
+    print(message)
+    print(f"{'='*50}\n")
+
+    try:
+        from twilio.rest import Client
+        account_sid = os.getenv("TWILIO_ACCOUNT_SID")
+        auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+        from_number = os.getenv("TWILIO_PHONE_NUMBER", "whatsapp:+14155238886")
+        client = Client(account_sid, auth_token)
+        client.messages.create(
+            from_=from_number,
+            to=f"whatsapp:{to_number}",
+            body=message
+        )
+        print(f"📤 [ASYNC] Pesan terkirim ke {to_number} ({len(message)} chars)")
+    except Exception as e:
+        print(f"⚠️ [ASYNC] Gagal kirim ke WA (pesan tetap tercetak di atas): {e}")
 
 # === Utilities ===
 
@@ -239,35 +269,33 @@ def whatsapp_reply():
                 msg.body("⚠️ Belum ada data.")
                 
         elif msg_lower == "4":
-             # Logic AI Manual Trigger (Enhanced with Gemini)
+            # Logic AI Manual Trigger (Enhanced with Gemini) - ASYNC
             data = get_latest_daily_data()
             if data:
-                msg.body("🧠 Sedang menyusun analisa cerdas dengan Gemini AI... Mohon tunggu sebentar.")
-                
-                # Use data from source tab (no Dashboard dependency)
+                # Langsung balas loading agar tidak timeout
+                msg.body("🧠 *Sedang memproses analisa AI...* Hasilnya akan dikirim dalam beberapa detik.")
+
+                # Proses AI di background thread
+                def run_ai_analysis(target, sensor_ctx_copy):
+                    try:
+                        try:
+                            diag = format_diagnosa_response()
+                        except:
+                            diag = "Tidak tersedia"
+                        from ai_helper import generate_ai_analysis
+                        ai_insight = generate_ai_analysis(sensor_ctx_copy, diag)
+                        result = f"🧠 *ANALISA CERDAS GEMINI AI*\n\n{ai_insight}\n\nKetik 'Menu' untuk kembali."
+                    except Exception as e:
+                        error_str = str(e)
+                        if "429" in error_str or "quota" in error_str.lower():
+                            result = "⚠️ Kuota AI harian sudah habis. Coba lagi nanti."
+                        else:
+                            result = f"⚠️ Gagal memuat AI: {e}"
+                    send_async_reply(target, result)
+
                 sensor_ctx = {k: v for k, v in data.items() if v and v != "-"}
-                
-                # Get diagnosis from new engine for context
-                try:
-                    diag = format_diagnosa_response()
-                except:
-                    diag = "Tidak tersedia"
-                
-                try:
-                    from ai_helper import generate_ai_analysis
-                    ai_insight = generate_ai_analysis(sensor_ctx, diag)
-                    
-                    resp_text = f"🧠 **ANALISA CERDAS GEMINI AI**\n\n"
-                    resp_text += f"{ai_insight}\n\n"
-                    resp_text += "Ketik 'Menu' untuk kembali."
-                    ai_msg = resp.message()
-                    ai_msg.body(resp_text)
-                except Exception as e:
-                    error_str = str(e)
-                    if "429" in error_str or "quota" in error_str.lower():
-                        msg.body("⚠️ Kuota AI harian sudah habis. Coba lagi nanti.")
-                    else:
-                        msg.body(f"⚠️ Gagal memuat AI: {e}")
+                t = threading.Thread(target=run_ai_analysis, args=(sender, sensor_ctx), daemon=True)
+                t.start()
             else:
                 msg.body("⚠️ Data tidak ditemukan untuk dianalisa.")
             
@@ -286,28 +314,31 @@ def whatsapp_reply():
                     from do_analyzer import get_aeration_recommendation
                     from ai_helper import start_do_copilot
                     
-                    msg.body("🧠 Sedang menganalisa kondisi DO dengan asisten AI... Mohon tunggu.")
-                    ai_msg = resp.message()
-                    
-                    # 1. Get math analysis
+                    # 1. Get math analysis (ringan, tidak pakai AI)
                     aeration_data = get_aeration_recommendation()
                     
                     if not aeration_data or aeration_data.get("aeration", None) is None:
-                        ai_msg.body("⚠️ Data DO belum cukup untuk dianalisa.")
+                        msg.body("⚠️ Data DO belum cukup untuk dianalisa.")
                         return reply(resp)
-                        
-                    # 2. Start Copilot Session
-                    initial_response, history = start_do_copilot(aeration_data)
                     
-                    # 3. Save Context
-                    state["stage"] = "copilot_session"
-                    state["session_history"] = history
-                    
-                    # Add instructions
-                    full_response = f"{initial_response}\n\n_(Ketik 'Menu' kapan saja untuk mengakhiri sesi diskusi ini)_"
-                    ai_msg.body(full_response)
+                    # 2. Langsung balas loading
+                    msg.body("💨 *Sedang menganalisa DO dengan AI Copilot...* Hasilnya akan dikirim sebentar.")
+
+                    # 3. Proses Copilot di background
+                    def run_do_copilot(target, aer_data, st):
+                        try:
+                            initial_response, history = start_do_copilot(aer_data)
+                            st["stage"] = "copilot_session"
+                            st["session_history"] = history
+                            full_response = f"{initial_response}\n\n_(Ketik 'Menu' kapan saja untuk mengakhiri sesi ini)_"
+                            send_async_reply(target, full_response)
+                        except Exception as e:
+                            send_async_reply(target, f"⚠️ Error DO Copilot: {e}")
+
+                    t = threading.Thread(target=run_do_copilot, args=(sender, aeration_data, state), daemon=True)
+                    t.start()
                 except Exception as e:
-                    ai_msg.body(f"⚠️ Error: {e}")
+                    msg.body(f"⚠️ Error: {e}")
         
         elif msg_lower == "7" or msg_lower.startswith("pakan"):
             # Feed Calculation
@@ -370,18 +401,22 @@ def whatsapp_reply():
                 except Exception as e:
                     msg.body(f"⚠️ Gagal refresh: {e}")
         
-        # AI Explanation (manual trigger)
+        # AI Explanation (manual trigger) - ASYNC
         elif msg_lower == "analisa" or msg_lower == "analisis":
             if not IOT_MODULES_AVAILABLE:
                 msg.body("⚠️ Modul IoT belum tersedia.")
             else:
-                try:
-                    msg.body("🧠 Sedang menganalisa dengan AI... Mohon tunggu.")
-                    ai_msg = resp.message()
-                    ai_text = generate_diagnosa_explanation()
-                    ai_msg.body(ai_text)
-                except Exception as e:
-                    msg.body(f"⚠️ Gagal analisa AI: {e}")
+                msg.body("🧠 *Sedang menyusun penjelasan AI...* Hasilnya akan dikirim sebentar.")
+
+                def run_diagnosa_explanation(target):
+                    try:
+                        ai_text = generate_diagnosa_explanation()
+                        send_async_reply(target, ai_text)
+                    except Exception as e:
+                        send_async_reply(target, f"⚠️ Gagal analisa AI: {e}")
+
+                t = threading.Thread(target=run_diagnosa_explanation, args=(sender,), daemon=True)
+                t.start()
         
         elif msg_lower == "detail":
             if not IOT_MODULES_AVAILABLE:
@@ -729,15 +764,60 @@ def whatsapp_reply():
             
             history = state.get("session_history", [])
             
-            # Send message to Gemini taking into account previous interactions
-            ai_reply_text, new_history = chat_with_copilot(history, msg_text)
+            # Langsung balas loading agar tidak timeout
+            msg.body("💬 *Sedang memproses balasan AI...* Hasilnya akan dikirim sebentar.")
             
-            # Update history state
-            state["session_history"] = new_history
+            # Deteksi keyword refresh data
+            REFRESH_KEYWORDS = [
+                "refresh", "cek ulang", "cek data", "data terbaru", "update data",
+                "ambil data", "lihat data", "data sekarang", "kondisi sekarang",
+                "gimana sekarang", "bagaimana sekarang", "kondisi terbaru"
+            ]
+            wants_refresh = any(kw in msg_lower for kw in REFRESH_KEYWORDS)
             
-            msg.body(f"{ai_reply_text}\n\n_(Ketik 'Menu' untuk mengakhiri diskusi)_")
+            # Proses Gemini di background thread
+            def run_copilot_chat(target, hist, user_msg, st, do_refresh):
+                try:
+                    actual_msg = user_msg
+
+                    # Jika user minta refresh → fetch data terbaru & inject ke konteks
+                    if do_refresh:
+                        try:
+                            from drive import get_latest_logged_data
+                            sensor_data = get_latest_logged_data()
+
+                            # Bangun konteks data terbaru
+                            refresh_ctx = "📡 [DATA TERBARU DARI SPREADSHEET]\n"
+                            if sensor_data:
+                                from datetime import datetime as dt
+                                refresh_ctx += f"🕐 Diambil: {dt.now().strftime('%d %b %Y, %H:%M')}\n"
+                                refresh_ctx += f"• DO: {sensor_data.get('do', '-')} mg/L\n"
+                                refresh_ctx += f"• pH: {sensor_data.get('ph', '-')}\n"
+                                refresh_ctx += f"• Suhu: {sensor_data.get('temp', '-')} °C\n"
+                                refresh_ctx += f"• TDS: {sensor_data.get('tds', '-')} ppm\n"
+                                refresh_ctx += f"• Listrik: {sensor_data.get('ac_status', '-')}\n"
+                            else:
+                                refresh_ctx += "Tidak ada data terbaru yang bisa diambil.\n"
+
+                            # Inject ke pesan user
+                            actual_msg = (
+                                f"{user_msg}\n\n"
+                                f"{refresh_ctx}\n"
+                                f"Tolong analisa dan komentari data terbaru di atas."
+                            )
+                        except Exception as e:
+                            actual_msg = f"{user_msg}\n\n[Gagal ambil data terbaru: {e}]"
+
+                    ai_reply_text, new_history = chat_with_copilot(hist, actual_msg)
+                    st["session_history"] = new_history
+                    send_async_reply(target, f"{ai_reply_text}\n\n_(Ketik 'Menu' untuk mengakhiri diskusi)_")
+                except Exception as e:
+                    send_async_reply(target, f"⚠️ Kesalahan sistem saat berdiskusi: {e}\n\nKetik 'Menu' untuk kembali.")
+            
+            t = threading.Thread(target=run_copilot_chat, args=(sender, history, msg_text, state, wants_refresh), daemon=True)
+            t.start()
         except Exception as e:
-             msg.body(f"⚠️ Kesalahan sistem saat berdiskusi: {e}\n\nKetik 'Menu' untuk kembali.")
+             msg.body(f"⚠️ Kesalahan sistem: {e}\n\nKetik 'Menu' untuk kembali.")
              
     else:
         # Fallback invalid stage
