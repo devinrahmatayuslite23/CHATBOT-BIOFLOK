@@ -233,22 +233,34 @@ def analyze_do_trend() -> Dict:
     alert_level = "NORMAL"
     recommendation = "Kondisi DO normal."
     
+    # Time of day awareness
+    hour = data_timestamp.hour
+    is_day_time = (6 <= hour < 18)
+    time_ctx = "siang hari" if is_day_time else "malam hari"
+    
     if current_do <= DO_DROP_THRESHOLDS["critical_level"]:
         alert_level = "CRITICAL"
-        recommendation = f"⚠️ KRITIS! DO sangat rendah ({current_do} mg/L). Aktifkan aerasi darurat segera!"
+        recommendation = f"⚠️ KRITIS! DO sangat rendah ({current_do} mg/L) di {time_ctx}. Aktifkan aerasi darurat segera!"
     elif current_do <= DO_DROP_THRESHOLDS["warning_level"]:
         alert_level = "WARNING"
-        recommendation = f"⚡ DO rendah ({current_do} mg/L). Tingkatkan aerasi."
+        recommendation = f"⚡ DO rendah ({current_do} mg/L) di {time_ctx}. Tingkatkan kekuatan kincir."
     
     if drop_rate is not None and drop_rate < 0:
         abs_rate = abs(drop_rate)
+        
+        # Custom warning text based on time of day
+        if is_day_time:
+            drop_warning = "Aneh! DO menurun di siang hari (seharusnya naik krn fotosintesis). Waspada cuaca mendung atau plankton mati (crash)!"
+        else:
+            drop_warning = "Penurunan DO alami terjadi di malam hari (respirasi), terus pantau hingga pagi."
+
         if abs_rate >= DO_DROP_THRESHOLDS["critical_drop_rate"]:
             alert_level = "CRITICAL"
-            recommendation = f"⚠️ KRITIS! DO turun cepat ({abs_rate} mg/L/jam). Cek aerator dan kurangi pakan!"
+            recommendation = f"⚠️ KRITIS! DO anjlok cepat ({abs_rate} mg/L/jam). {drop_warning} Nyalakan FULL aerator!"
         elif abs_rate >= DO_DROP_THRESHOLDS["warning_drop_rate"]:
             if alert_level != "CRITICAL":
                 alert_level = "WARNING"
-            recommendation = f"⚡ DO menurun ({abs_rate} mg/L/jam). Monitor ketat dan siapkan aerasi tambahan."
+            recommendation = f"⚡ Tren DO menurun ({abs_rate} mg/L/jam). {drop_warning}"
     
     return {
         "status": "ANALYZED",

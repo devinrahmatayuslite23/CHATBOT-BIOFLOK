@@ -95,22 +95,36 @@ function do_analyzeTrend(ss) {
     let alert_level = "NORMAL";
     let recommendation = "Kondisi DO normal.";
     
+    // Time of day awareness
+    const hour = data_timestamp.getHours();
+    const isDayTime = (hour >= 6 && hour < 18);
+    const timeCtx = isDayTime ? "siang hari" : "malam hari";
+    
     if (current_do <= DO_DROP_THRESHOLDS.critical_level) {
         alert_level = "CRITICAL";
-        recommendation = `⚠️ KRITIS! DO sangat rendah (${current_do} mg/L). Aktifkan aerasi darurat segera!`;
+        recommendation = `⚠️ KRITIS! DO sangat rendah (${current_do} mg/L) di ${timeCtx}. Aktifkan aerasi darurat segera!`;
     } else if (current_do <= DO_DROP_THRESHOLDS.warning_level) {
         alert_level = "WARNING";
-        recommendation = `⚡ DO rendah (${current_do} mg/L). Tingkatkan aerasi.`;
+        recommendation = `⚡ DO rendah (${current_do} mg/L) di ${timeCtx}. Tingkatkan kekuatan kincir.`;
     }
     
     if (drop_rate !== null && drop_rate < 0) {
         let abs_rate = Math.abs(drop_rate);
+        
+        // Custom warning text based on time of day
+        let dropWarning = "";
+        if (isDayTime) {
+            dropWarning = "Aneh! DO menurun di siang hari (seharusnya naik krn fotosintesis). Waspada cuaca mendung atau plankton mati (crash)!";
+        } else {
+            dropWarning = "Penurunan DO alami terjadi di malam hari (respirasi), terus pantau hingga pagi.";
+        }
+
         if (abs_rate >= DO_DROP_THRESHOLDS.critical_drop_rate) {
             alert_level = "CRITICAL";
-            recommendation = `⚠️ KRITIS! DO turun cepat (${abs_rate.toFixed(3)} mg/L/jam). Cek aerator dan kurangi pakan!`;
+            recommendation = `⚠️ KRITIS! DO anjlok cepat (${abs_rate.toFixed(3)} mg/L/jam). ${dropWarning} Nyalakan FULL aerator!`;
         } else if (abs_rate >= DO_DROP_THRESHOLDS.warning_drop_rate) {
             if (alert_level !== "CRITICAL") alert_level = "WARNING";
-            recommendation = `⚡ DO menurun (${abs_rate.toFixed(3)} mg/L/jam). Monitor ketat dan siapkan aerasi tambahan.`;
+            recommendation = `⚡ Tren DO menurun (${abs_rate.toFixed(3)} mg/L/jam). ${dropWarning}`;
         }
     }
     
