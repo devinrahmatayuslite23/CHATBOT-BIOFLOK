@@ -48,15 +48,52 @@ DO_DROP_THRESHOLDS = {
 
 def get_recent_do_readings(hours: int = 4, fallback: bool = False) -> List[Dict]:
     """
-    Ambil data DO dari Water Quality tab dalam window waktu tertentu.
-    
-    Args:
-        hours: Window waktu dalam jam
-        fallback: Jika True, ambil SEMUA data tanpa filter waktu (fallback mode)
-    
-    Returns:
-        List of dict dengan keys: timestamp, do_value, device
+    Ambil data DO. Coba ambil via GAS_API_URL dulu agar cepat.
+    Jika gagal/tidak ada GAS API, fallback ke gspread.
     """
+    import os
+    import requests
+    gas_api = os.getenv("GAS_API_URL")
+    
+    if gas_api:
+        try:
+            payload = {"action": "get_ai_context", "type": "do"}
+            print("📡 Fetching DO context from GAS API...")
+            resp = requests.post(gas_api, json=payload, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("status") == "success":
+                    readings = data.get("data", [])
+                    cutoff_time = datetime.now() - timedelta(hours=hours)
+                    filtered = []
+                    for r in readings:
+                        try:
+                            # Format dr GAS is "yyyy-MM-dd HH:mm:ss"
+                            ts = datetime.strptime(r["timestamp"], "%Y-%m-%d %H:%M:%S")
+                            # If not fallback, filter by cutoff_time
+                            if not fallback and ts < cutoff_time:
+                                continue
+                            filtered.append({
+                                "timestamp": ts,
+                                "do_value": float(r["do_value"]),
+                                "device": r.get("device", "Unknown")
+                            })
+                        except Exception as parse_e:
+                            print(f"⚠️ Error parsing GAS DO API TS: {parse_e}")
+                            continue
+
+                    # Fallback if no filtered data and not in fallback mode
+                    if not filtered and not fallback:
+                        # Sometimes we don't return early here depending on logic,
+                        pass
+
+                    return sorted(filtered, key=lambda x: x["timestamp"])
+
+        except Exception as e:
+            print(f"⚠️ GAS API Fetch failed, falling back to gspread: {e}")
+
+    # ===== FALLBACK TO GSPREAD =====
+    print("📡 Fetching DO context via gspread (SLOW)...")
     if not water_tab:
         return []
     
@@ -95,10 +132,8 @@ def get_recent_do_readings(hours: int = 4, fallback: bool = False) -> List[Dict]
                         continue
                 
                 if not ts:
-                    print(f"⚠️ Failed to parse TS: {ts_str}")
                     continue
 
-                # Filter waktu hanya jika BUKAN fallback mode
                 if not fallback and ts < cutoff_time:
                     continue
                 
@@ -121,7 +156,7 @@ def get_recent_do_readings(hours: int = 4, fallback: bool = False) -> List[Dict]
         return readings
         
     except Exception as e:
-        print(f"⚠️ Error getting DO readings: {e}")
+        print(f"⚠️ Error getting DO readings via gspread: {e}")
         return []
 
 

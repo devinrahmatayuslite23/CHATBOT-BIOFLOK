@@ -64,17 +64,41 @@ def generate_recommendations(alerts, lang="en"):
     except Exception as e:
         return [f"⚠️ Kesalahan AI: {e}" if lang == "id" else f"⚠️ AI error: {e}"]
 
-def generate_ai_analysis(dashboard_dict, diagnosis_result, lang="id"):
+def generate_ai_analysis(dashboard_dict=None, diagnosis_result=None, lang="id"):
     """
     Generate a more comprehensive AI narrative based on the 
-    Matrix Diagnosis result and current sensor data.
+    Matrix Diagnosis result and current sensor data from GAS API context.
     """
+    import json
+    import requests
+    gas_api = os.getenv("GAS_API_URL")
+    context_text = f"Data Sensor: {str(dashboard_dict)}\n"
+    
+    # Coba tarik full context dari GAS kalau ada
+    if gas_api:
+        try:
+            payload = {"action": "get_ai_context", "type": "diagnosis"}
+            print("📡 Fetching FULL AI Context from GAS...")
+            resp = requests.post(gas_api, json=payload, timeout=15)
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("status") == "success":
+                    context_text = (
+                        "=== HISTORI MINGGUAN KOLAM ===\n"
+                        f"Data Air: {json.dumps(data.get('recent_water_quality', []), indent=2)}\n"
+                        f"Kematian Ikan: {json.dumps(data.get('recent_dead_fish', []), indent=2)}\n"
+                        f"Pemberian Pakan: {json.dumps(data.get('recent_feed', []), indent=2)}\n\n"
+                        f"Diagnosis Hasil Matrix Engine: {json.dumps(data.get('diagnosis_result', {}).get('top_diagnosis', 'Normal'))}\n"
+                    )
+        except Exception as e:
+            print(f"⚠️ Failed to get full context for AI, using fallback dict: {e}")
+
     prompt = (
-        f"Sebagai ahli akuakultur, berikan analisis singkat untuk kondisi berikut:\n"
-        f"Kondisi Saat Ini (Diagnosa Matrix): **{diagnosis_result}**\n\n"
-        f"Data Sensor: {str(dashboard_dict)}\n\n"
-        f"Tugasmu: Jelaskan MENGAPA kondisi ini terjadi dan apa 2-3 langkah DARURAT yang harus dilakukan."
-        f"Gunakan Bahasa Indonesia yang teknis tapi mudah dimengerti petambak."
+        f"Sebagai ahli akuakultur profesional (Copilot), berikan analisis menyeluruh.\n"
+        f"Fokus pada MENGAPA kondisi terjadi berdasarkan pola data historis ini:\n\n"
+        f"{context_text}\n\n"
+        f"Tugasmu: Jelaskan keterkaitan data (misal DO yang turun dengan ikan yang mati), "
+        f"dan berikan 2-3 langkah DARURAT/KOREKTIF. Gunakan Bahasa Indonesia yang teknis tapi mudah dimengerti petambak."
         f"MAKSIMAL 150 kata."
     )
     
