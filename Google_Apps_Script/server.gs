@@ -35,6 +35,22 @@ function notifyBot(e) {
   // 2. Jika Water Quality -> Sensor Webhook
   // [MODIFIKASI] Kita buat lebih longgar, jika mengandung kata "Water" atau "Quality"
   else if (sheetName.indexOf("Water") > -1 || sheetName.indexOf("Control") > -1) {
+     
+     // 🚀 JALANKAN DIAGNOSIS OFFLINE DI GOOGLE SHEETS DULU (Bypass Python)
+     try {
+       // Cek apakah tabel/engine sudah diload
+       if (typeof runAutoDiagnosis === 'function') {
+         var result = runAutoDiagnosis();
+         if (result && result.topDiag) {
+            // Tulis hasil diagnosa ke sheet jika diperlukan (Optional untuk nanti)
+            Logger.log("✅ Auto Diagnosa GAS Selesai.");
+         }
+       }
+     } catch (err) {
+       Logger.log("❌ Gagal jalankan diagnosa GAS: " + err);
+     }
+     
+     // Tetap kirim webhook ke Python untuk keperluan WhatsApp dll
      sendWebhook("/webhook/sensor-update", {"sheet": sheetName});
   }
   
@@ -42,6 +58,14 @@ function notifyBot(e) {
   // Kita asumsikan update dari API itu biasanya data Sensor, jadi kita paksa cek sensor
   else {
      Logger.log("⚠️ Nama sheet tidak jelas, asumsi update sensor.");
+     
+     // 🚀 JALANKAN DIAGNOSIS OFFLINE DI GOOGLE SHEETS DULU
+     try {
+       if (typeof runAutoDiagnosis === 'function') {
+         runAutoDiagnosis();
+       }
+     } catch (err) {}
+     
      sendWebhook("/webhook/sensor-update", {"sheet": "Unknown-Force-Check"});
   }
 }

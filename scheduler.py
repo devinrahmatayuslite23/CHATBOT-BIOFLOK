@@ -95,14 +95,12 @@ def notify_experts(user_phone, data, ai_insight=None):
         summary += f"\n🎥 *Video Kondisi:*\n{video_link}"
 
     # AI INSIGHT LOGIC
+    # AI hanya dikirim jika sudah ada hasil dari request manual user (ai_insight parameter)
+    # Tidak lagi auto-trigger Gemini saat data sensor masuk → hemat kuota
     if ai_insight:
         rec_msg = f"\n\n🧠 **ANALISA CERDAS GEMINI:**\n{ai_insight}"
     else:
-        recommendations = generate_recommendations(alerts, lang="id")
-        if recommendations:
-            rec_msg = "\n\n🧠 *Saran AI:*\n" + "\n".join(recommendations)
-        else:
-            rec_msg = "\n\n🧠 *Saran AI:*\nTidak ada anomali yang terdeteksi."
+        rec_msg = "\n\n💡 _Ketik 'analisa' di chatbot untuk mendapatkan saran AI._"
 
     full_message = summary + rec_msg
     

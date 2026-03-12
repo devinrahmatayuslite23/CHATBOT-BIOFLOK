@@ -1,0 +1,38 @@
+# Panduan Eksekusi (Deploy) Migrasi Diagnosis ke GAS
+
+Karena kita menggunakan arsitektur baru (API Endpoint), maka *PANDUAN_DEPLOY_FASE_1.txt* yang lama sudah Basi. Silakan ikuti panduan **VERSI FINAL** di bawah ini:
+
+### TAHAP 1: Update File di Google Apps Script (Spreadsheet)
+1. Buka File Google Sheets kamu.
+2. Ke menu **Extensions > Apps Script**.
+3. Di sisi kiri (Files), **tambahkan 1 file script baru** dengan cara klik icon `+`, pilih `Script`.
+4. Beri nama **`API_Endpoint.gs`**.
+5. Buka `Google_Apps_Script/API_Endpoint.gs` di editor komputermu, **copy semua isinya**, lalu **paste** ke dalam file `API_Endpoint.gs` di Google Apps Script. 💾 Save.
+6. Sekarang, klik file **`Diagnosis_Engine.gs`** (pastikan sudah kamu buat sebelumnya sesuai log kita di hari kemarin). **Copy seluruh isi terbarunya** dari komputer kamu (`Google_Apps_Script/Diagnosis_Engine.gs`), lalu **paste/replace** kodenya di Apps Script Google. 💾 Save.
+7. Klik file **`Menu_Utama.gs`** di Google Apps Script, lalu **copy paste / timpa seluruh isinya** dengan file dari komputermu (`Google_Apps_Script/Menu_Utama.gs`). Ini untuk menambahkan tombol test manual. 💾 Save.
+8. File `server.gs` TETAP seperti yang kemarin, tidak perlu dirubah lagi.
+
+### TAHAP 2: Mendapatkan URL Web App (Endpoint)
+Ini langkah paling penting karena bot Python butuh "alamat" untuk nge-Ping Google Sheets kamu.
+
+1. Di kanan atas halaman Apps Script, klik tombol biru **Deploy** > **New deployment**.
+2. Pada icon ⚙️ (Select type), pilih **Web app**.
+3. Deskripsi: Bebas (misal: "API Diagnosa v1").
+4. Execute as: **Me** 
+5. Who has access: **Anyone**  *(WAJIB "Anyone" agar Python tidak ditolak)*.
+6. Klik **Deploy**.
+7. Akan muncul sebuah **Web app URL** (berawalan *https://script.google.com/macros/s/.../exec*).
+8. **COPY URL tersebut!**
+
+### TAHAP 3: Memasukkan URL ke Bot Python
+1. Kembali ke komputermu (VS Code / terminal).
+2. Buka file `.env`.
+3. Tambahkan satu baris baru di paling bawah:
+   `GAS_API_URL="PASTE_URL_WEB_APP_YANG_KAMU_COPY_TADI_DISINI"`
+   *(Catatan: Jangan lupa tanda kutip ganda "")*
+4. Save file `.env`.
+
+### TAHAP 4: Test JALAN!
+1. Restart/Run kembali Bot Python kamu (`python app.py`).
+2. Coba tambahkan Data Sensor fiktif yang aneh (misal DO: 1) di tab `Water Quality` lalu Enter. Harusnya di tab **Diagnosis History** otomatis muncul baris The Matrix baru!
+3. Sekarang coba WA bot kamu: "Diagnosa kolam dong". Python harusnya merespon mengambil hasil dari Web App tadi dengan kecepatan kilat!

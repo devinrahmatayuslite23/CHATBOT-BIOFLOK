@@ -4,25 +4,27 @@ Dynamic diagnosis system that reads rules and matrix from Google Sheets.
 Includes: Emergency Priority, In-Memory Cache, Weighted Scoring.
 """
 import drive
-import gspread
 import time
+import requests
+import os
 from datetime import datetime, timedelta
 
 # ===========================
+# API TO GOOGLE APPS SCRIPT
+# ===========================
+# TODO: Ganti URL di bawah ini dengan URL Web App Apps Script milik Anda (setelah di-deploy)
+GAS_API_URL = os.getenv("GAS_API_URL", "https://script.google.com/macros/s/AKfycbybH-RzEaZJ_wL_U8eQWjF7tZ-_Y7Xz8/exec")
+
+# ===========================
 # SMART CACHE STRATEGY
-# Rules & Matrix: cached 30 min (rarely change)
+# Rules: cached 30 min (rarely change)
 # Tab Data (sensor): ALWAYS fresh (changes frequently)
 # ===========================
 _cache = {
     "rules": None,
-    "matrix": None,
     "config_last_fetch": None,
     "config_ttl_minutes": 1440
 }
-
-SCORING_DATA_WEIGHT = 0.7
-SCORING_PRIOR_WEIGHT = 0.3
-DEPTH_CAP = 6
 
 
 def _is_config_cache_valid():
@@ -37,7 +39,6 @@ def force_reload_config():
     """Force clear cache so next fetch gets fresh rules."""
     _cache["config_last_fetch"] = None
     _cache["rules"] = None
-    _cache["matrix"] = None
     print("🔄 Cache cleared via manual refresh.")
     return True
 
@@ -70,16 +71,13 @@ def _fetch_config():
         })
         tab_names.add(tab_source)
     
-    # 2. Read Matrix Diagnosis
-    matrix_ws = sh.worksheet("Matrix Diagnosis")
-    matrix_data = matrix_ws.get_all_values()
+    # 2. Matrix Diagnosis is now handled entirely by Apps Script, no need to fetch it here.
     
     _cache["rules"] = rules
-    _cache["matrix"] = matrix_data
     _cache["config_last_fetch"] = datetime.now()
-    print(f"🔄 Diagnosis Rules & Matrix reloaded from Spreadsheet! (Next refresh in {_cache['config_ttl_minutes']} min)")
+    print(f"🔄 Diagnosis Rules reloaded from Spreadsheet! (Next refresh in {_cache['config_ttl_minutes']} min)")
     
-    return rules, matrix_data
+    return rules
 
 
 def _fetch_tab_data(rules):
@@ -120,7 +118,7 @@ def get_latest_sensor_data():
     """
     try:
         # We need rules to identify the 'Water Quality' tab and its columns
-        rules, _ = _fetch_config() 
+        rules = _fetch_config()  # ← Fixed: _fetch_config() now returns only rules
         
         # Filter rules to find the 'Water Quality' tab
         water_quality_rules = [r for r in rules if r["tab_source"] == "Water Quality"]
@@ -179,166 +177,16 @@ def _fetch_all_data():
     # Config: use cache if valid
     if _is_config_cache_valid():
         rules = _cache["rules"]
-        matrix_data = _cache["matrix"]
     else:
-        rules, matrix_data = _fetch_config()
+        rules = _fetch_config()
     
     # Sensor data: ALWAYS fresh
     tab_data = _fetch_tab_data(rules)
     
-    return rules, tab_data, matrix_data
+    return rules, tab_data
 
 
-def _evaluate_rules(rules, tab_data):
-    """Evaluate all rules against latest data → PASS/FAIL snapshot."""
-    snapshot = {}
-    data_values = {}  # Store actual values for display
-    
-    for rule in rules:
-        tab_name = rule["tab_source"]
-        data = tab_data.get(tab_name, [])
-        
-        if not data:
-            snapshot[rule["param"]] = "FAIL"
-            continue
-        
-        tab_headers = data[0]
-        tab_rows = data[1:]
-        
-        # Find column
-        col_idx = None
-        matched_col = None
-        for idx, h in enumerate(tab_headers):
-            if rule["keyword"].lower() in h.lower():
-                col_idx = idx
-                matched_col = h
-                break
-        
-        if col_idx is None:
-            snapshot[rule["param"]] = "FAIL"
-            continue
-        
-        # Get latest value
-        latest_val = None
-        for row in reversed(tab_rows):
-            if col_idx < len(row) and row[col_idx].strip():
-                latest_val = row[col_idx].strip()
-                break
-        
-        if latest_val is None:
-            snapshot[rule["param"]] = "FAIL"
-            continue
-        
-        # Evaluate
-        try:
-            num_val = float(latest_val.replace(",", "."))
-            num_threshold = float(rule["value"].replace(",", "."))
-            
-            op = rule["operator"]
-            if op == "<": passed = num_val < num_threshold
-            elif op == ">": passed = num_val > num_threshold
-            elif op == "<=": passed = num_val <= num_threshold
-            elif op == ">=": passed = num_val >= num_threshold
-            elif op == "=": passed = num_val == num_threshold
-            else: passed = False
-        except ValueError:
-            if rule["operator"] == "=":
-                passed = latest_val.lower() == rule["value"].lower()
-            else:
-                passed = False
-        
-        status = "PASS" if passed else "FAIL"
-        snapshot[rule["param"]] = status
-        data_values[rule["param"]] = {
-            "value": latest_val,
-            "column": matched_col or rule["keyword"],
-            "tab": tab_name
-        }
-    
-    return snapshot, data_values
-
-
-def _match_matrix(snapshot, matrix_data):
-    """Match PASS/FAIL snapshot against Matrix Diagnosis."""
-    headers = matrix_data[0]
-    rows = matrix_data[1:]
-    
-    # Map columns
-    param_cols = {}
-    diag_col, freq_col, cost_col = 2, 1, None
-    
-    for i, h in enumerate(headers):
-        h_clean = h.strip()
-        if h_clean in snapshot:
-            param_cols[h_clean] = i
-        if "cost" in h.lower():
-            cost_col = i
-    
-    max_possible = len(param_cols)
-    
-    # Collect frequencies for prior
-    all_freq = []
-    for row in rows:
-        if len(row) <= diag_col: continue
-        d = row[diag_col].strip()
-        if d.startswith("COST") or d == "-" or not d: continue
-        try:
-            all_freq.append(float(row[freq_col].strip()))
-        except:
-            all_freq.append(0)
-    total_freq = sum(all_freq) if all_freq else 1
-    
-    # Score diagnoses
-    results = []
-    for row in rows:
-        if len(row) <= diag_col: continue
-        diag_name = row[diag_col].strip()
-        if diag_name.startswith("COST") or diag_name == "-" or not diag_name:
-            continue
-        
-        try:
-            freq_num = float(row[freq_col].strip())
-        except:
-            freq_num = 0
-        
-        total_cond = 0
-        matched_cond = 0
-        missed_params = []
-        
-        for param_name, col_idx in param_cols.items():
-            if col_idx >= len(row): continue
-            matrix_val = row[col_idx].strip().upper()
-            if matrix_val in ("?", "", "-"): continue
-            
-            current_val = snapshot.get(param_name, "FAIL")
-            total_cond += 1
-            if matrix_val == current_val:
-                matched_cond += 1
-            else:
-                missed_params.append(param_name)
-        
-        if total_cond == 0:
-            continue
-        
-        match_ratio = matched_cond / total_cond * 100
-        depth_weight = min(total_cond, DEPTH_CAP) / DEPTH_CAP
-        weighted_score = match_ratio * depth_weight
-        prior = freq_num / total_freq if total_freq > 0 else 0
-        final_score = (weighted_score * SCORING_DATA_WEIGHT) + (prior * 100 * SCORING_PRIOR_WEIGHT)
-        
-        if matched_cond > 0:
-            results.append({
-                "diagnosis": diag_name,
-                "final_score": final_score,
-                "match_ratio": match_ratio,
-                "matched": matched_cond,
-                "total": total_cond,
-                "frequency": freq_num,
-                "missed": missed_params
-            })
-    
-    results.sort(key=lambda x: x["final_score"], reverse=True)
-    return results
+# Matrix matching is now handled by Google Apps Script
 
 
 def _check_emergency(snapshot, data_values):
@@ -366,216 +214,215 @@ def _check_emergency(snapshot, data_values):
     return emergencies
 
 
-def _format_data_summary(snapshot, data_values, rules):
-    """Format sensor data summary for WhatsApp."""
+def _format_data_summary(trigger_values_list):
+    """Format sensor data summary from JSON trigger list for WhatsApp."""
+    if not trigger_values_list:
+        return "  Data parameter tidak tersedia"
+        
     lines = []
-    
-    # Group by tab for cleaner display
-    seen = set()
-    key_params = {
-        "DO": ("Low DO", "High DO"),
-        "pH": ("Low pH", "High pH"),
-        "Suhu": ("Low Temp", "High Temp"),
-        "Pompa": ("Low Pump", "High Pump"),
-        "Kematian": ("Low Death", "High Death"),
-        "Berat": ("Low Weight", "High Weight"),
-        "Pakan": ("Low Feed", "High Feed"),
-        "Listrik": ("Power Outage",),
-    }
-    
-    # Interpret emoji based on parameter semantics
-    # "Low Death PASS" means deaths are low → GOOD
-    # "Low Temp PASS" means temp is low → WARNING
-    # "Power Outage PASS" means power is out → BAD
-    warning_when_pass = {"Low Temp", "High Temp", "Low DO", "High DO", 
-                         "Low pH", "High pH", "Power Outage",
-                         "High Death", "High Feed", "Low Feed",
-                         "Low Weight", "High Biomass"}
-    good_when_pass = {"High Pump", "Low Death", "High SR"}
-    
-    for label, params in key_params.items():
-        for p in params:
-            if p in data_values and p not in seen:
-                val = data_values[p]["value"]
-                status = snapshot.get(p, "FAIL")
-                if status == "PASS":
-                    emoji = "⚠️" if p in warning_when_pass else "✅"
-                else:
-                    emoji = "✅"
-                lines.append(f"  {emoji} {label}: {val}")
-                seen.add(p)
-                for pp in params:
-                    seen.add(pp)
-                break
-    
+    # trigger_values_list format: ["do: 4.5", "temperature: 28.5", "ph: 7.2"]
+    for item in trigger_values_list:
+        # Pengecekan sederhana menggunakan string matching untuk icon
+        lower_item = item.lower()
+        if "mati" in lower_item or "kematian" in lower_item or "outage" in lower_item or "ac_status: off" in lower_item:
+            emoji = "⚠️"
+        else:
+            emoji = "✅" 
+            
+        # Format ke title case parameter jika memungkinkan misal "do" -> "DO"
+        parts = item.split(":", 1)
+        if len(parts) == 2:
+            param = parts[0].strip().title()
+            val = parts[1].strip()
+            if param.lower() == "do": param = "DO"
+            if param.lower() == "ph": param = "pH"
+            if param.lower() == "tds": param = "TDS"
+            lines.append(f"  {emoji} {param}: {val}")
+        else:
+            lines.append(f"  {emoji} {item}")
+            
     return "\n".join(lines)
 
 
 def format_diagnosa_response():
-    """Main entry point: run full diagnosis and return formatted WhatsApp message."""
+    """Main entry point: Call Google Apps Script API to run diagnosis and return formatted WhatsApp message."""
     try:
-        # Always fetch (config cached internally, sensor data always fresh)
-        rules, tab_data, matrix_data = _fetch_all_data()
+        print(f"📡 Requesting Diagnosis from Google Apps Script API...")
+        payload = {"action": "run_diagnosis"}
         
-        # Phase 3: Evaluate rules
-        snapshot, data_values = _evaluate_rules(rules, tab_data)
+        response = requests.post(GAS_API_URL, json=payload, timeout=30)
+        response.raise_for_status()
         
-        # Emergency check
-        emergencies = _check_emergency(snapshot, data_values)
+        res_json = response.json()
+        print(f"📥 Received response from GAS: {res_json.get('status', 'unknown')}")
         
-        # Phase 4: Matrix matching
-        results = _match_matrix(snapshot, matrix_data)
-        
-        # Build WhatsApp message
         now = datetime.now().strftime("%d %b %Y, %H:%M WIB")
+        status = res_json.get("status")
         
-        msg = ""
+        if status == "error":
+           error_msg = res_json.get("error_message", "Unknown error in Apps Script")
+           return f"⚠️ Error dari Google Sheets API: {error_msg}"
         
-        # Emergency alerts first
-        if emergencies:
-            msg += "⚡⚡⚡ *ALERT DARURAT* ⚡⚡⚡\n"
-            msg += "━━━━━━━━━━━━━━━━━━━━\n\n"
-            for e in emergencies:
-                msg += f"{e['title']}\n"
-                msg += f"   {e['detail']}\n\n"
-                msg += f"⏱️ Segera lakukan:\n{e['action']}\n\n"
-            msg += "━━━━━━━━━━━━━━━━━━━━\n\n"
-        
-        # Data summary
-        msg += "🔬 *DIAGNOSA KOLAM OTOMATIS*\n"
+        msg = "🔬 *DIAGNOSA KOLAM OTOMATIS*\n"
         msg += "━━━━━━━━━━━━━━━━━━━━\n\n"
-        msg += "📊 *Data Terakhir:*\n"
-        msg += _format_data_summary(snapshot, data_values, rules) + "\n\n"
         
-        # Top diagnosis
-        if results:
-            top = results[0]
-            confidence = int(top["final_score"])
-            msg += f"🏆 *Diagnosa Utama ({confidence}%):*\n"
-            msg += f"{top['diagnosis']}\n"
-            msg += f"  _({top['matched']}/{top['total']} syarat cocok)_\n\n"
+        if status == "danger":
+            # Emergency Alert (DO Kritis / Listrik Mati)
+            snapshot = res_json.get("snapshot", {})
+            trigger_values = res_json.get("trigger_values", [])
+            val_dict = {}
+            for tv in trigger_values:
+                parts = tv.split(": ", 1)
+                if len(parts) == 2:
+                    val_dict[parts[0].strip()] = parts[1].strip()
+            data_values_mock = {k: {"value": v} for k, v in val_dict.items()}
+            emergencies = _check_emergency(snapshot, data_values_mock)
+            if emergencies:
+                msg += "⚡⚡⚡ *ALERT DARURAT* ⚡⚡⚡\n"
+                msg += "━━━━━━━━━━━━━━━━━━━━\n\n"
+                for e in emergencies:
+                    msg += f"{e['title']}\n"
+                    msg += f"   {e['detail']}\n\n"
+                    msg += f"⏱️ Segera lakukan:\n{e['action']}\n\n"
+                msg += "━━━━━━━━━━━━━━━━━━━━\n\n"
+
+            # Data summary dari trigger_values (hanya PASS)
+            if trigger_values:
+                msg += "📊 *Data Terakhir:*\n"
+                msg += _format_data_summary(trigger_values) + "\n\n"
             
-            # Runner-ups (only if > 40%)
-            others = [r for r in results[1:5] if r["final_score"] >= 40]
+            # Top diagnosis
+            top_diagnosis = res_json.get("top_diagnosis", "Unknown")
+            final_score = int(res_json.get("final_score", 0))
+            matched = res_json.get("matched_conditions", 0)
+            total = res_json.get("total_conditions", 0)
+            
+            msg += f"🏆 *Diagnosa Utama ({final_score}%):*\n"
+            msg += f"{top_diagnosis}\n"
+            msg += f"  _({matched}/{total} syarat cocok)_\n\n"
+            
+            # Kemungkinan Lain (runner-up dari all_results)
+            all_results = res_json.get("all_results", [])
+            others = [r for r in all_results[1:5] if r.get("final_score", 0) >= 40]
             if others:
                 msg += "📋 *Kemungkinan Lain:*\n"
                 for i, r in enumerate(others):
-                    score = int(r["final_score"])
-                    # Extract short diagnosis name (D23 – Title)
-                    d_name = r["diagnosis"]
+                    score = int(r.get("final_score", 0))
+                    d_name = r.get("diagnosis", "")
                     if len(d_name) > 40:
                         d_name = d_name[:40] + "..."
                     msg += f"  {i+2}. {d_name} ({score}%)\n"
                 msg += "\n"
+            
+            # Kondisi Aktif (semua PASS dari snapshot)
+            active = [k for k, v in snapshot.items() if v == "PASS"]
+            if active:
+                msg += f"⚡ *Kondisi Aktif ({len(active)}):* "
+                msg += ", ".join(active) + "\n\n"
+            
+        elif status == "normal":
+            msg += "✅ *Tidak ada masalah terdeteksi. Kondisi Normal.*\n\n"
         else:
-            msg += "✅ *Tidak ada masalah terdeteksi.*\n\n"
-        
-        # Active conditions
-        active = [k for k, v in snapshot.items() if v == "PASS"]
-        if active:
-            msg += f"⚡ *Kondisi Aktif ({len(active)}):* "
-            msg += ", ".join(active) + "\n\n"
-        
+            msg += f"⚠️ Status respon API tidak dikenali: {status}\n\n"
+            
         msg += f"━━━━━━━━━━━━━━━━━━━━\n"
         msg += f"📅 {now}\n"
         msg += f"Ketik 'detail' untuk breakdown | 'analisa' untuk penjelasan AI"
         
         return msg
         
+    except requests.exceptions.RequestException as e:
+        return f"⚠️ Error koneksi ke Google Apps Script: {e}\nPastikan GAS Web App URL valid dan sudah di-deploy."
     except Exception as e:
         return f"⚠️ Error menjalankan diagnosa: {e}"
 
 
 def format_diagnosa_detail():
-    """Show detailed diagnosis breakdown."""
+    """Show detailed diagnosis breakdown menggunakan data dari GAS API.
+    READ-ONLY: tidak menyimpan ke Diagnosis History."""
     try:
-        # Always fetch (config cached internally, sensor data always fresh)
-        rules, tab_data, matrix_data = _fetch_all_data()
+        print(f"📡 Requesting Detail from Google Apps Script API (read-only)...")
+        payload = {"action": "get_diagnosis_detail"}  # ← read-only, tidak update History
+        response = requests.post(GAS_API_URL, json=payload, timeout=30)
+        response.raise_for_status()
+        res_json = response.json()
         
-        snapshot, data_values = _evaluate_rules(rules, tab_data)
-        results = _match_matrix(snapshot, matrix_data)
+        status = res_json.get("status")
+        if status == "error":
+            return f"⚠️ Error: {res_json.get('error_message', 'Unknown')}"
+        if status == "normal":
+            return "✅ Kondisi Normal. Tidak ada masalah terdeteksi."
         
         msg = "🔍 *DETAIL DIAGNOSA*\n"
         msg += "━━━━━━━━━━━━━━━━━━━━\n\n"
         
-        # Show top 5
-        for i, r in enumerate(results[:5]):
-            emoji = "🔴" if r["final_score"] >= 60 else "🟠" if r["final_score"] >= 40 else "🟡"
-            msg += f"{emoji} *#{i+1} ({int(r['final_score'])}%)*\n"
-            msg += f"{r['diagnosis']}\n"
-            
-            # Formating missing parameters
-            miss_text = "Tidak ada"
-            if r['missed']:
-                miss_text = ", ".join(r['missed'])
-                    
-            msg += f"  Match: {r['matched']}/{r['total']} | Freq: {int(r['frequency'])}\n"
-            msg += f"  Miss: _{miss_text}_\n\n"
+        # Top 5 dari all_results
+        all_results = res_json.get("all_results", [])
+        for i, r in enumerate(all_results[:5]):
+            score = int(r.get("final_score", 0))
+            emoji = "🔴" if score >= 60 else "🟠" if score >= 40 else "🟡"
+            msg += f"{emoji} *#{i+1} ({score}%)*\n"
+            msg += f"{r.get('diagnosis', '-')}\n"
+            msg += f"  Match: {r.get('matched',0)}/{r.get('total',0)} | Freq: {int(r.get('frequency',0))}\n\n"
         
-        # Show all rule results
-        msg += "📊 *Rule Evaluation:*\n"
-        for param, status in snapshot.items():
-            val = data_values.get(param, {}).get("value", "-")
-            emoji = "🟢" if status == "PASS" else "⚪"
-            msg += f"  {emoji} {param}: {val} → {status}\n"
+        # Rule Evaluation dari snapshot + trigger_values
+        snapshot = res_json.get("snapshot", {})
+        trigger_values = res_json.get("trigger_values", [])
         
+        # Buat dict value dari trigger_values: "Low DO: 20" → {"Low DO": "20"}
+        val_dict = {}
+        for tv in trigger_values:
+            parts = tv.split(": ", 1)
+            if len(parts) == 2:
+                val_dict[parts[0].strip()] = parts[1].strip()
+        
+        if snapshot:
+            msg += "📊 *Rule Evaluation:*\n"
+            for param, status_val in snapshot.items():
+                val = val_dict.get(param, "-")
+                emoji = "🟢" if status_val == "PASS" else "⚪"
+                msg += f"  {emoji} {param}: {val} → {status_val}\n"
+        
+        msg += "\nKetik 'Menu' untuk kembali."
         return msg
         
     except Exception as e:
-        return f"⚠️ Error: {e}"
+        return f"⚠️ Error mengambil detail: {e}"
 
 
 def generate_diagnosa_explanation():
     """
-    Generate AI explanation for the current diagnosis.
-    Calls Gemini to explain WHY the diagnosis makes sense,
-    connects real data to the diagnosis, and gives actionable steps.
-    Returns formatted WhatsApp message (separate bubble).
+    Generate AI explanation for the current diagnosis based on API response.
     """
     try:
-        import os
         from google import genai
         client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
         
-        # Get fresh diagnosis data
-        rules, tab_data, matrix_data = _fetch_all_data()
-        snapshot, data_values = _evaluate_rules(rules, tab_data)
-        results = _match_matrix(snapshot, matrix_data)
-        emergencies = _check_emergency(snapshot, data_values)
+        # Request data dari GAS API (read-only, tidak update Diagnosis History)
+        response = requests.post(GAS_API_URL, json={"action": "get_diagnosis_detail"}, timeout=30)
+        response.raise_for_status()
+        res_json = response.json()
         
-        if not results:
-            return "✅ Tidak ada masalah terdeteksi. Kolam dalam kondisi baik."
-        
-        top = results[0]
+        if res_json.get("status") == "normal" or res_json.get("status") == "error":
+            return "✅ Tidak ada masalah krusial terdeteksi. Kolam dalam kondisi baik."
+            
+        top_diagnosis = res_json.get("top_diagnosis", "Unknown")
+        final_score = int(res_json.get("final_score", 0))
+        matched = res_json.get("matched_conditions", 0)
+        total = res_json.get("total_conditions", 0)
+        trigger_values = res_json.get("trigger_values", [])
         
         # Build sensor context string
-        sensor_lines = []
-        for param, info in data_values.items():
-            sensor_lines.append(f"  - {param}: {info['value']}")
-        sensor_text = "\n".join(sensor_lines)
-        
-        # Active conditions
-        active = [k for k, v in snapshot.items() if v == "PASS"]
-        active_text = ", ".join(active) if active else "Tidak ada"
+        sensor_text = "\n".join([f"  - {val}" for val in trigger_values])
         
         # Build Gemini prompt
         prompt = (
             f"Kamu adalah ahli akuakultur bioflok Indonesia. "
             f"Berdasarkan data sensor dan diagnosa berikut, berikan penjelasan untuk petambak.\n\n"
-            f"DIAGNOSA UTAMA: {top['diagnosis']} (confidence {int(top['final_score'])}%)\n"
-            f"Syarat cocok: {top['matched']}/{top['total']}\n\n"
+            f"DIAGNOSA UTAMA: {top_diagnosis} (confidence {final_score}%)\n"
+            f"Syarat cocok: {matched}/{total}\n\n"
             f"DATA SENSOR TERKINI:\n{sensor_text}\n\n"
-            f"KONDISI AKTIF: {active_text}\n\n"
         )
-        
-        if emergencies:
-            emg_text = ", ".join([e['title'] for e in emergencies])
-            prompt += f"⚠️ KONDISI DARURAT: {emg_text}\n\n"
-        
-        # Runner-ups for context
-        if len(results) > 1:
-            others = [f"{r['diagnosis']} ({int(r['final_score'])}%)" for r in results[1:3]]
-            prompt += f"KEMUNGKINAN LAIN: {', '.join(others)}\n\n"
         
         prompt += (
             "TUGASMU:\n"
@@ -587,13 +434,12 @@ def generate_diagnosa_explanation():
             "BATASAN: MAKSIMAL 120 kata. Sangat padat, langsung ke inti. Jangan bertele-tele."
         )
         
-        response = client.models.generate_content(
+        response_gemini = client.models.generate_content(
             model='gemini-2.0-flash',
             contents=prompt
         )
-        ai_text = response.text.strip()
+        ai_text = response_gemini.text.strip()
         
-        # Format ringkas untuk WhatsApp (max 1500 char total)
         msg = f"🧠 *PENJELASAN AI*\n\n{ai_text}\n\nKetik 'Menu' untuk kembali."
         
         return msg
@@ -605,4 +451,4 @@ def generate_diagnosa_explanation():
                     "⚠️ Kuota AI harian sudah habis.\n"
                     "Coba lagi besok atau dalam 1-2 menit.\n\n"
                     "Ketik 'Menu' untuk kembali.")
-        return f"🧠 *PENJELASAN AI:*\n\n⚠️ Gagal memuat analisa.\n\nKetik 'Menu' untuk kembali."
+        return f"🧠 *PENJELASAN AI:*\n\n⚠️ Gagal memuat analisa. {e}\n\nKetik 'Menu' untuk kembali."
