@@ -480,8 +480,7 @@ def _build_aeration_message(trend: Dict, aeration: Dict) -> Dict:
         f"• Defisit O₂: {aeration['oxygen_deficit_kg']} kg\n"
         f"• Total/jam: {aeration['total_o2_need_kg']} kg O₂\n"
         f"• Aerator: *{aeration['recommended_aerator_hp']} HP*\n\n"
-        f"💡 {trend['recommendation']}\n\n"
-        f"_Ketik pertanyaan untuk diskusi lanjut_"
+        f"💡 {trend['recommendation']}"
     )
 
     
