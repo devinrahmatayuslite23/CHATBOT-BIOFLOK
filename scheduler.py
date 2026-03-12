@@ -28,11 +28,14 @@ scheduler.start()
 
 
 def send_whatsapp_message(to, body):
-    client.messages.create(
-        from_=TWILIO_NUMBER, # [MODIFIKASI] Menghapus prefix 'whatsapp:' ganda
-        to="whatsapp:" + to,
-        body=body
-    )
+    try:
+        client.messages.create(
+            from_=TWILIO_NUMBER, # [MODIFIKASI] Menghapus prefix 'whatsapp:' ganda
+            to="whatsapp:" + to,
+            body=body
+        )
+    except Exception as e:
+        print(f"❌ Failed to send WhatsApp message to {to}: {e}")
 
 
 def format_date_indonesian():
@@ -49,58 +52,69 @@ def format_date_indonesian():
 
 
 def notify_experts(user_phone, data, ai_insight=None):
-    alerts = check_out_of_range({k.lower(): v for k, v in data.items()})
-    all_keys = {
-        "do": "DO (mg/L)", "ph": "pH", "temp": "Suhu (°C)", "temperature": "Suhu (°C)",
-        "dead_fish": "Ikan Mati", "death": "Ikan Mati",
-        "feeding_freq": "Frekuensi Pemberian Pakan",
-        "feed_weight": "Berat Pakan (gram)", "feed": "Berat Pakan (gram)",
-        "inv_feed": "Jumlah Pakan Tersisa",
-        "inv_rest": "Jumlah Pakan Baru",
-    }
-
     tanggal = format_date_indonesian()
-    summary = f"📅 *{tanggal}*\n\n"
-    if "SYSTEM-AUTO" in user_phone:
-        summary += "🤖 *OTOMATIS - DETEKSI SISTEM*\n\n"
-    elif "UJI COBA" in user_phone:
-        summary += "🧪 *PESAN INI HANYA UJI COBA*\n\n"
-    summary += f"📡 *Laporan Data* ({user_phone}):\n"
+    
+    if isinstance(data, str):
+        summary = f"📅 *{tanggal}*\n\n"
+        if "SYSTEM-AUTO" in user_phone:
+            summary += "🤖 *OTOMATIS - DETEKSI SISTEM*\n\n"
+        elif "UJI COBA" in user_phone:
+            summary += "🧪 *PESAN INI HANYA UJI COBA*\n\n"
+        summary += f"📡 *Laporan Data* ({user_phone}):\n\n{data}"
+    else:
+        alerts = check_out_of_range({k.lower(): v for k, v in data.items()})
+        all_keys = {
+            "do": "DO (mg/L)", "ph": "pH", "temp": "Suhu (°C)", "temperature": "Suhu (°C)",
+            "dead_fish": "Ikan Mati", "death": "Ikan Mati",
+            "feeding_freq": "Frekuensi Pemberian Pakan",
+            "feed_weight": "Berat Pakan (gram)", "feed": "Berat Pakan (gram)",
+            "inv_feed": "Jumlah Pakan Tersisa",
+            "inv_rest": "Jumlah Pakan Baru",
+        }
 
-    for key, label in all_keys.items():
-        # Avoid duplicate keys if both temp and temperature exist
-        val = data.get(key) or data.get(key.title()) or data.get(key.upper())
-        if val is None or val == "" or val == "-":
-            continue
-        
-        emoji = "✅"
-        note = ""
-        key_low = key.lower()
-        if key_low in alerts:
-            emoji = "❌"
-            try:
-                # Basic check for note
-                from thresholds import SOP_THRESHOLDS
-                if key_low in SOP_THRESHOLDS:
-                    limit = SOP_THRESHOLDS[key_low]
-                    f_val = float(val)
-                    if f_val < limit["min"]: note = " (rendah)"
-                    elif f_val > limit["max"]: note = " (tinggi)"
-            except: pass
+        summary = f"📅 *{tanggal}*\n\n"
+        if "SYSTEM-AUTO" in user_phone:
+            summary += "🤖 *OTOMATIS - DETEKSI SISTEM*\n\n"
+        elif "UJI COBA" in user_phone:
+            summary += "🧪 *PESAN INI HANYA UJI COBA*\n\n"
+        summary += f"📡 *Laporan Data* ({user_phone}):\n"
+
+        for key, label in all_keys.items():
+            # Avoid duplicate keys if both temp and temperature exist
+            val = data.get(key) or data.get(key.title()) or data.get(key.upper())
+            if val is None or val == "" or val == "-":
+                continue
             
-        summary += f"{emoji} {label}: {val}{note}\n"
+            emoji = "✅"
+            note = ""
+            key_low = key.lower()
+            if key_low in alerts:
+                emoji = "❌"
+                try:
+                    # Basic check for note
+                    from thresholds import SOP_THRESHOLDS
+                    if key_low in SOP_THRESHOLDS:
+                        limit = SOP_THRESHOLDS[key_low]
+                        f_val = float(val)
+                        if f_val < limit["min"]: note = " (rendah)"
+                        elif f_val > limit["max"]: note = " (tinggi)"
+                except: pass
+                
+            summary += f"{emoji} {label}: {val}{note}\n"
 
-    video_link = data.get("general_video_photo") or data.get("video")
-    if video_link:
-        summary += f"\n🎥 *Video Kondisi:*\n{video_link}"
+        video_link = data.get("general_video_photo") or data.get("video")
+        if video_link:
+            summary += f"\n🎥 *Video Kondisi:*\n{video_link}"
 
     # AI INSIGHT LOGIC
     # AI hanya dikirim jika sudah ada hasil dari request manual user (ai_insight parameter)
     # Tidak lagi auto-trigger Gemini saat data sensor masuk → hemat kuota
     if ai_insight:
         rec_msg = f"\n\n🧠 **ANALISA CERDAS GEMINI:**\n{ai_insight}"
-    else:
+    elif not isinstance(data, str):
         rec_msg = "\n\n💡 _Ketik 'analisa' di chatbot untuk mendapatkan saran AI._"
+    else:
+        rec_msg = ""
 
     full_message = summary + rec_msg
     
