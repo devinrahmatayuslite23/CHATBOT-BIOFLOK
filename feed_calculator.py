@@ -444,6 +444,41 @@ def get_feed_recommendation(
         survival_rate: Estimated survival rate
         target_weight_g: Target berat untuk harvest
     """
+    
+    import os
+    import requests
+    gas_api = os.getenv("GAS_API_URL")
+    
+    # === 1. TRY GAS API FAST PATH ===
+    if gas_api:
+        try:
+            print("📡 Fetching Feed Recommendation from GAS API...")
+            payload = {"action": "get_feed"}
+            if avg_weight_g is not None:
+                payload["avg_weight_g"] = avg_weight_g
+                
+            resp = requests.post(gas_api, json=payload, timeout=15)
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("status") in ["SUCCESS", "NO_DATA"]:
+                    # Inject growth and harvest manually since GAS doesn't have it yet
+                    history = get_sampling_history(weeks=4)
+                    growth = calculate_growth_rate(history) if len(history) >= 2 else None
+                    harvest_projection = None
+                    if growth and growth["adg_g_per_day"] > 0:
+                        harvest_projection = project_harvest(
+                            current_weight_g=data.get("feed_calculation", {}).get("avg_weight_g", avg_weight_g) or 100,
+                            target_weight_g=target_weight_g,
+                            adg=growth["adg_g_per_day"]
+                        )
+                    data["growth_data"] = growth
+                    data["harvest_projection"] = harvest_projection
+                    return data
+        except Exception as e:
+            print(f"⚠️ GAS Feed API failed: {e}. Falling back to local python calculation...")
+
+    # === 2. FALLBACK TO LOCAL PYTHON CALCULATION ===
+
     # Get weight from sampling if not provided
     if avg_weight_g is None:
         sampling = get_latest_sampling()

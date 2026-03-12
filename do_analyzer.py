@@ -326,6 +326,7 @@ def calculate_oxygen_demand(
 def get_aeration_recommendation(pond_config: Optional[Dict] = None) -> Dict:
     """
     Generate rekomendasi aerasi lengkap berdasarkan kondisi terkini.
+    Akan mencoba mengambil dari Google Apps Script API terlebih dahulu untuk menghemat beban.
     
     Args:
         pond_config: Konfigurasi kolam (optional, gunakan default jika None)
@@ -333,6 +334,35 @@ def get_aeration_recommendation(pond_config: Optional[Dict] = None) -> Dict:
     Returns:
         Dict dengan trend analysis + aeration calculation
     """
+    import os
+    import requests
+    gas_api = os.getenv("GAS_API_URL")
+    
+    # === 1. TRY GAS API FAST PATH ===
+    if gas_api:
+        try:
+            print("📡 Fetching Aeration Recommendation from GAS API...")
+            resp = requests.post(gas_api, json={"action": "get_aeration"}, timeout=15)
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("trend") and data.get("message") == "Success":
+                    trend = data["trend"]
+                    aeration = data["aeration"]
+                    
+                    # Kita reformat trend timestamp dari string ke datetime spy format di bawah ga error
+                    if trend.get("data_timestamp"):
+                        from datetime import datetime
+                        try:
+                            # From GAS: '2024-05-30 14:00:00'
+                            trend["data_timestamp"] = datetime.strptime(trend["data_timestamp"], "%Y-%m-%d %H:%M:%S")
+                        except:
+                            pass
+                    
+                    return _build_aeration_message(trend, aeration)
+        except Exception as e:
+            print(f"⚠️ GAS Aeration API failed: {e}. Falling back to local python calculation...")
+
+    # === 2. FALLBACK TO LOCAL PYTHON CALCULATION ===
     config = pond_config or DEFAULT_POND_CONFIG
     
     # Get trend analysis
@@ -354,6 +384,12 @@ def get_aeration_recommendation(pond_config: Optional[Dict] = None) -> Dict:
         avg_weight_g=config.get("avg_weight_g", 100),
         safety_factor=config.get("safety_factor", 1.2)
     )
+    
+    return _build_aeration_message(trend, aeration)
+
+
+def _build_aeration_message(trend: Dict, aeration: Dict) -> Dict:
+    """Helper formatting string dari dict data aeration."""
     
     # Format timestamp info untuk output
     ts = trend.get("data_timestamp")

@@ -60,6 +60,25 @@ function handleRequest(e) {
       return _jsonResponse(ctx);
     }
 
+    // ======================
+    // ACTION: get_aeration (Backend DO Calculator)
+    // ======================
+    if (action === "get_aeration") {
+       return _jsonResponse(getAerationRecommendationApi());
+    }
+
+    // ======================
+    // ACTION: get_feed (Backend Feed Calculator)
+    // ======================
+    if (action === "get_feed") {
+        let weight = null;
+        if (e.postData && e.postData.contents) {
+            let body = JSON.parse(e.postData.contents);
+            weight = body.avg_weight_g;
+        }
+        return _jsonResponse(getFeedRecommendationApi(weight));
+    }
+
     // Fallback
     return _jsonResponse({ "status": "error", "error_message": "Unknown action: " + action });
 
