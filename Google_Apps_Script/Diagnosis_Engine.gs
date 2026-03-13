@@ -185,7 +185,77 @@ function _evaluateRules(rules, tabData) {
       continue;
     }
 
-    // Evaluasi nilai vs threshold
+    // ==========================================
+    // Cek Kolom Logic (F) jika Diisi (Syarat Waktu / Kondisi Tergantung)
+    // ==========================================
+    let logicPassed = true;
+    if (rule.logic) {
+      let lText = rule.logic.toString().trim();
+      
+      // Kasus 1: Syarat Waktu -> TIME(06:00-18:00)
+      if (lText.startsWith("TIME(")) {
+        let match = lText.match(/TIME\((?:(\d+):(\d+))-(\d+):(\d+)\)/);
+        if (match) {
+          let currHour = new Date().getHours();
+          let currMin = new Date().getMinutes();
+          let currTotal = currHour * 60 + currMin;
+          
+          let startMin = parseInt(match[1]) * 60 + parseInt(match[2]);
+          let endMin = parseInt(match[3]) * 60 + parseInt(match[4]);
+          
+          if (currTotal < startMin || currTotal > endMin) {
+            logicPassed = false; // di luar jam kerja syarat
+          }
+        }
+      }
+      // Kasus 2: Syarat Bergantung (AND Parameter Lain) -> AND(pH > 8.0)
+      else if (lText.startsWith("AND(")) {
+        let match = lText.match(/AND\((.+?)\s*([<>=]+)\s*([\d\.]+)\)/);
+        if (match) {
+           let depKeyword = match[1].trim();
+           let depOp = match[2];
+           let depVal = parseFloat(match[3]);
+           
+           // Cari tahu nilai sensor depKeyword di baris terbaru tab ini (atau tab lain dalam lingkup data)
+           // Untuk mempermudah kita cari di seluruh header tabName saat ini dulu
+           let depIdx = -1;
+           for (let idx = 0; idx < tabHeaders.length; idx++) {
+             if (tabHeaders[idx].toString().toLowerCase().includes(depKeyword.toLowerCase())) {
+               depIdx = idx; break;
+             }
+           }
+           
+           if (depIdx !== -1) {
+             let lastDepStr = null;
+             for (let ri = tabRows.length - 1; ri >= 0; ri--) {
+                if (tabRows[ri][depIdx].toString().trim() !== "") {
+                  lastDepStr = tabRows[ri][depIdx].toString().trim();
+                  break;
+                }
+             }
+             
+             if (lastDepStr !== null) {
+                let dVal = parseFloat(lastDepStr.replace(",", "."));
+                if (!isNaN(dVal)) {
+                   if (depOp === ">" && !(dVal > depVal)) logicPassed = false;
+                   if (depOp === "<" && !(dVal < depVal)) logicPassed = false;
+                   if (depOp === ">=" && !(dVal >= depVal)) logicPassed = false;
+                   if (depOp === "<=" && !(dVal <= depVal)) logicPassed = false;
+                   if ((depOp === "=" || depOp === "==") && !(dVal === depVal)) logicPassed = false;
+                } else logicPassed = false;
+             } else logicPassed = false; // data bergantung tidak ditemukan
+           } else logicPassed = false; // kolom bergantung tidak ditemukan
+        }
+      }
+    }
+    
+    // Jika kolom Logic diisi dan nilainya FAIL, maka baris rule ini otomatis digagalkan pengujiannya
+    if (!logicPassed) {
+       snapshot[rule.param] = "FAIL"; // Secara internal kita anggap tidak relevan / ditolak kondisinya
+       continue;
+    }
+
+    // Evaluasi nilai utama vs threshold
     let passed = false;
     try {
       const numVal = parseFloat(latestVal.replace(",", "."));
