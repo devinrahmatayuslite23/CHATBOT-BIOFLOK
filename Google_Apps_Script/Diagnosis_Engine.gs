@@ -1,4 +1,4 @@
-﻿/**
+/**
  * =========================================================================
  * âš™ï¸ DIAGNOSIS ENGINE (DUAL-BRAIN AI) - GOOGLE APPS SCRIPT EDITION V2
  * =========================================================================
@@ -315,27 +315,21 @@ function _calculateBayesianScore(snapshot, matrixData, config, sopMap) {
        const currentVal = snapshot[param];
        
        if(currentVal === "N/A" || !currentVal) {
-         // Data N/A â†’ skip, tidak update logOdds (identik dgn client: obs === null)
+         // Data N/A → skip, tidak update logOdds (identik dgn client: obs === null)
          missedRules.push(param);
          continue;
        }
        
-       // â”€â”€ Sensitivity dari Matrix (identik dgn client) â”€â”€
-       // Client: sens = row.vals[hIdx]
-       //   if (sens === null) sens = 0.5
-       //   else if (sens === 1) sens = 0.99
-       //   else if (sens === 0) sens = 0.01
-       //
-       // PENTING: sens di client = P(T=Fail | Fault=Present)
-       //   sens=0.99 artinya: jika matrix=1(PASS), maka P(Fail|Present)=0.99
-       //   sens=0.01 artinya: jika matrix=0(FAIL), maka P(Fail|Present)=0.01
+       // PENTING: sens = P(T=Fail | Fault=Present)
+       // matrix='PASS' (Symptom ada) -> P(Fail|Present) sangat KECIL (0.01)
+       // matrix='FAIL' (Symptom tidak ada) -> P(Fail|Present) sangat BESAR (0.99)
        let sens;
        if(matrixVal === "PASS" || matrixVal === "1" || matrixVal === "TRUE") {
-         sens = 0.99; // matrix=1 â†’ sens = 0.99
+         sens = 0.01;
        } else if(matrixVal === "FAIL" || matrixVal === "0" || matrixVal === "FALSE" || matrixVal === "-1" || matrixVal === "2") {
-         sens = 0.01; // matrix=0 â†’ sens = 0.01
+         sens = 0.99;
        } else {
-         sens = 0.5;  // matrix=null â†’ no info
+         sens = 0.5;  // matrix=null → no info
        }
        
        let p_fail_given_absent = falseAlarm;
