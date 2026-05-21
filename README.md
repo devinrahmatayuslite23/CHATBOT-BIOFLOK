@@ -1,14 +1,14 @@
-# ðŸ Ÿ BIOFLOK SYSTEM: Dual-Brain Diagnosis Engine
+# BIOFLOK SYSTEM: Dual-Brain Diagnosis Engine
 
 Bioflok System adalah platform manajemen kualitas air dan diagnostik pintar untuk budidaya ikan (lele/nila) bersistem Bioflok. Sistem ini menggunakan arsitektur **Dual-Brain AI (Bayesian Probability + Decision Tree)** yang ditanamkan langsung pada **Google Sheets / Apps Script** dan dihubungkan ke asisten virtual melalui **Python Chatbot**.
 
 ---
 
-## âš™ï¸  Arsitektur Sistem Utama (Core System)
+## Arsitektur Sistem Utama (Core System)
 
 Otak utama dari AI analisis data berjalan sepenuhnya di dalam **Google Apps Script**. Data parameter air kolam dikumpulkan secara *real-time*, dievaluasi secara matematis, lalu kesimpulannya dikirimkan ke petambak.
 
-### ðŸ“‚ Struktur File Google Apps Script (Inti Sistem)
+### Struktur File Google Apps Script (Inti Sistem)
 
 Berikut adalah penjelasan fungsi dari masing-masing file skrip yang menggerakkan sistem:
 
@@ -43,14 +43,14 @@ Berikut adalah penjelasan fungsi dari masing-masing file skrip yang menggerakkan
 7. **`Setup.gs`**
    - File pendukung untuk instalasi pertama kali, membantu membuat Trigger waktu (Time-driven) atau mereset properti rahasia (*ScriptProperties*).
 
-### ðŸ–¥ï¸  File Antarmuka Pop-up (HTML)
+### File Antarmuka Pop-up (HTML)
 File HTML ini dipanggil oleh *Menu_Utama.gs* untuk memunculkan antarmuka visual di dalam layar Google Sheets:
 - **`DiagnosisPopup.html`**: Layar hasil simulasi diagnosa yang dimodelkan menyerupai gelembung *chat* WhatsApp, lengkap dengan SOP dan peringatan VOI.
 - **`TreeVisualPopup.html`**: Dasbor *visualizer* interaktif canggih yang merender grafik pohon keputusan secara *real-time* dan interaktif (dapat diekspor ke PDF).
 
 ---
 
-## ðŸ  Komponen Server Python (Bot Eksternal)
+## Komponen Server Python (Bot Eksternal)
 
 *(Bagian ini dikelola di komputer server lokal / Heroku untuk menghubungkan Sheets ke antarmuka aplikasi pesan)*
 
