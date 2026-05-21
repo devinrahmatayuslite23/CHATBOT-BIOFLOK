@@ -59,7 +59,6 @@ def _fetch_config():
     for row in rules_rows:
         if len(row) < 5: continue
         param, keyword, tab_source, operator, value = row[0], row[1], row[2], row[3], row[4]
-        logic = row[5] if len(row) > 5 else ""
         
         if not tab_source or tab_source == "UNKNOWN":
             continue
@@ -67,7 +66,19 @@ def _fetch_config():
         rules.append({
             "param": param, "keyword": keyword,
             "tab_source": tab_source, "operator": operator,
-            "value": value, "logic": logic
+            "value": value,
+            # --- Gerbong Logic 1 (Kolom F, G, H, I, J) ---
+            "logic":       row[5]  if len(row) > 5  else "",
+            "keyword2":    row[6]  if len(row) > 6  else "",
+            "tab_source2": row[7]  if len(row) > 7  else "",
+            "operator2":   row[8]  if len(row) > 8  else "",
+            "value2":      row[9]  if len(row) > 9  else "",
+            # --- Gerbong Logic 2 (Kolom K, L, M, N, O) ---
+            "logic2":      row[10] if len(row) > 10 else "",
+            "keyword3":    row[11] if len(row) > 11 else "",
+            "tab_source3": row[12] if len(row) > 12 else "",
+            "operator3":   row[13] if len(row) > 13 else "",
+            "value3":      row[14] if len(row) > 14 else "",
         })
         tab_names.add(tab_source)
     

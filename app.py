@@ -321,19 +321,42 @@ def whatsapp_reply():
                         msg.body("⚠️ Data DO belum cukup untuk dianalisa.")
                         return reply(resp)
                     
-                    # 2. Langsung balas loading
-                    msg.body("💨 *Sedang menganalisa DO dengan AI Copilot...* Hasilnya akan dikirim sebentar.")
+                    # 2. Simpan di memori sementara untuk dipakai AI nanti
+                    state["last_aeration_data"] = aeration_data
+                    
+                    # 3. Langsung balas hasil perhitungan tanpa memanggil AI
+                    msg_text_resp = aeration_data.get("message", "Data Aerasi berhasil dimuat.")
+                    msg_text_resp += "\n\n🤖 *Punya pertanyaan lebih lanjut?*\nKetik *'tanya ai'* untuk konsultasi interaktif dengan Copilot mengenai kondisi diatas."
+                    msg.body(msg_text_resp)
+                except Exception as e:
+                    msg.body(f"⚠️ Error: {e}")
+                    
+        elif msg_lower == "tanya ai":
+            # AI Copilot Integration for DO Analysis
+            if "last_aeration_data" not in state:
+                msg.body("⚠️ Silahkan ketik 'aerasi' terlebih dahulu untuk menarik data terbaru sebelum memanggil AI.")
+            else:
+                try:
+                    from ai_helper import start_do_copilot
+                    aeration_data = state["last_aeration_data"]
+                    
+                    # Langsung balas loading
+                    msg.body("💨 *Sedang memanggil DO Copilot...* Mohon tunggu sebentar.")
 
-                    # 3. Proses Copilot di background
+                    # Proses Copilot di background
                     def run_do_copilot(target, aer_data, st):
                         try:
                             initial_response, history = start_do_copilot(aer_data)
                             st["stage"] = "copilot_session"
                             st["session_history"] = history
-                            full_response = f"{initial_response}\n\n_(Ketik 'Menu' kapan saja untuk mengakhiri sesi ini)_"
+                            full_response = f"💡 *DO COPILOT*\n\n{initial_response}\n\n_(Balas pesan ini untuk ngobrol, ketik 'Menu' untuk akhiri)_"
                             send_async_reply(target, full_response)
                         except Exception as e:
-                            send_async_reply(target, f"⚠️ Error DO Copilot: {e}")
+                            error_str = str(e)
+                            if "429" in error_str or "quota" in error_str.lower():
+                                send_async_reply(target, "⚠️ Kuota AI harian sudah habis (Free Tier Limit). Coba lagi nanti.")
+                            else:
+                                send_async_reply(target, f"⚠️ Error DO Copilot: {e}")
 
                     t = threading.Thread(target=run_do_copilot, args=(sender, aeration_data, state), daemon=True)
                     t.start()
@@ -386,10 +409,76 @@ def whatsapp_reply():
             else:
                 try:
                     result = format_diagnosa_response()
-                    msg.body(result)
+                    msg.body(result + "\n\n💡 *Ingin tahu kenapa hasilnya seperti ini?*\nKetik *'kenapa'* atau *'jelaskan'* untuk penjelasan detail.")
                 except Exception as e:
                     msg.body(f"⚠️ Error diagnosa: {e}")
 
+        # [NEW] Penjelasan Detail Diagnosa - "Kenapa hasilnya begini?"
+        elif msg_lower in ["kenapa", "jelaskan", "detail diagnosa", "why", "explain"]:
+            if not IOT_MODULES_AVAILABLE:
+                msg.body("⚠️ Modul IoT belum tersedia.")
+            else:
+                try:
+                    import drive
+                    sh = drive.dashboard
+                    if not sh:
+                        msg.body("⚠️ Tidak dapat terhubung ke database.")
+                    else:
+                        hist_ws = sh.worksheet("Diagnosis History")
+                        hist_data = hist_ws.get_all_values()
+                        if len(hist_data) < 2:
+                            msg.body("⚠️ Belum ada riwayat diagnosa.")
+                        else:
+                            headers = hist_data[0]
+                            last_row = hist_data[-1]
+                            
+                            # Kolom tetap:
+                            # 0=Timestamp, 1=Diagnosa, 2=Prob, 3=Match, 4=Kemungkinan Lain
+                            # 5+ = Parameter dengan nilai "KW:val (context) → STATUS"
+                            timestamp = last_row[0] if len(last_row) > 0 else "-"
+                            diagnosa  = last_row[1] if len(last_row) > 1 else "-"
+                            prob      = last_row[2] if len(last_row) > 2 else "-"
+                            
+                            detail_lines = []
+                            for i, header in enumerate(headers[5:], start=5):
+                                if i >= len(last_row): break
+                                cell_val = last_row[i]
+                                if not cell_val or cell_val.strip() == "": continue
+                                
+                                # Format: "KW:nilai (konteks) → PASS/FAIL"
+                                if "→ PASS" in cell_val:
+                                    status_icon = "✅"
+                                    status_text = "PASS (Gejala Ditemukan)"
+                                elif "→ FAIL" in cell_val:
+                                    status_icon = "❌"
+                                    status_text = "FAIL (Tidak Relevan)"
+                                else:
+                                    status_icon = "⚪"
+                                    status_text = cell_val
+                                
+                                # Ambil bagian nilai sebelum tanda "→"
+                                val_part = cell_val.split("→")[0].strip()
+                                detail_lines.append(f"{status_icon} *{header}*\n   {val_part} → {status_text}")
+                            
+                            if detail_lines:
+                                detail_text = "\n\n".join(detail_lines)
+                                reply_msg = (
+                                    f"📊 *PENJELASAN DIAGNOSA TERAKHIR*\n"
+                                    f"🕐 {timestamp}\n"
+                                    f"🩺 Hasil: *{diagnosa}* ({prob}%)\n\n"
+                                    f"━━━━━━━━━━━\n"
+                                    f"{detail_text}\n\n"
+                                    f"━━━━━━━━━━━\n"
+                                    f"💬 Nilai dalam kurung () = konteks syarat Logic yang dipakai.\n"
+                                    f"Tanda @ = jam kejadian (Logika TIME).\n\n"
+                                    f"Ketik 'Menu' untuk kembali."
+                                )
+                            else:
+                                reply_msg = "⚠️ Tidak ada detail parameter yang bisa ditampilkan."
+                            
+                            msg.body(reply_msg)
+                except Exception as e:
+                    msg.body(f"⚠️ Error membaca penjelasan: {e}")
         # [NEW] Manual Refresh Command
         elif msg_lower in ["refresh", "reload", "update rules"]:
             if not IOT_MODULES_AVAILABLE:

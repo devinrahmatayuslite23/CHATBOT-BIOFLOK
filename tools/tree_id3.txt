@@ -1,0 +1,200 @@
+=== ID3 Speed Max ===
+ROOT: High Weight
+
+[High Weight]
+  PASS ->
+    [Low DO]
+      PASS ->
+        [High Death]
+          PASS ->
+            [High pH]
+              PASS ->
+                [High Do]
+                  PASS ->
+                    [Low pH]
+                      PASS ->
+                        LEAF: D5 â€“ Low DO + low pH (alkalinity crash under heavy load)
+                      FAIL ->
+                        LEAF: D10 â€“ Oxygen demand overload (acute DO crisis)
+                  FAIL ->
+                    LEAF: D27 â€“ Cage/flow restriction (blower OK but local low DO & deaths)
+              FAIL ->
+                [Low pH]
+                  PASS ->
+                    [High SR]
+                      PASS ->
+                        LEAF: D48 â€“ Algal Crash Post Spike
+                      FAIL ->
+                        LEAF: D58 â€“ Late Cycle Old Floc Syndrome
+                  FAIL ->
+                    [Low Pump]
+                      PASS ->
+                        LEAF: D53 â€“ Undersized Blower Structural Limit
+                      FAIL ->
+                        LEAF: D47 â€“ Floc Collapse with DO Crash
+          FAIL ->
+            [High Do]
+              PASS ->
+                [High Pump]
+                  PASS ->
+                    [Low Pump]
+                      PASS ->
+                        LEAF: D11 â€“ Aeration underset (blower setting too low)
+                      FAIL ->
+                        LEAF: D3 â€“ Low DO due to overfeeding & high biomass (organic overload)
+                  FAIL ->
+                    LEAF: D2 â€“ Low DO due to blower setting too low for biomass
+              FAIL ->
+                [High pH]
+                  PASS ->
+                    LEAF: D25 â€“ Chronic borderline DO at high biomass (pre-failure)
+                  FAIL ->
+                    [High Temphh]
+                      PASS ->
+                        LEAF: D46 â€“ Heterotrophic Bloom Carbon Overdose
+                      FAIL ->
+                        LEAF: D49 â€“ Old Sludge Oxygen Demand
+      FAIL ->
+        [High Feed]
+          PASS ->
+            [Low Weight]
+              PASS ->
+                [High Pump]
+                  PASS ->
+                    LEAF: D18 â€“ Underfeeding (high DO
+                  FAIL ->
+                    [High Do]
+                      PASS ->
+                        LEAF: D54 â€“ Cold Snap Low Appetite
+                      FAIL ->
+                        LEAF: D22 â€“ Early cycle
+              FAIL ->
+                [Low Pump]
+                  PASS ->
+                    LEAF: D15 â€“ Cold stress (slow growth
+                  FAIL ->
+                    [High Do]
+                      PASS ->
+                        LEAF: D43 â€“ Good survival
+                      FAIL ->
+                        LEAF: D45 â€“ Suspected Nitrite Toxicity
+          FAIL ->
+            [Low Feed]
+              PASS ->
+                [Low Pump]
+                  PASS ->
+                    LEAF: D29 â€“ Hidden biomass / under-sampled weight (many fish
+                  FAIL ->
+                    LEAF: D31 â€“ Feed distribution issue (fish not eating
+              FAIL ->
+                [High Death]
+                  PASS ->
+                    [High Do]
+                      PASS ->
+                        LEAF: D6 â€“ Apparent Low DO
+                      FAIL ->
+                        LEAF: D23 â€“ Early-cycle overfeeding (low biomass
+                  FAIL ->
+                    [High Do]
+                      PASS ->
+                        LEAF: D8 â€“ High DO due to oversized aeration for high biomass (inefficient)
+                      FAIL ->
+                        LEAF: D40 â€“ Heavy biomass and deaths
+  FAIL ->
+    [Low SR]
+      PASS ->
+        [High pH]
+          PASS ->
+            [High Pump]
+              PASS ->
+                [Low DO]
+                  PASS ->
+                    LEAF: D17 â€“ Overfeeding â†’ organic overload
+                  FAIL ->
+                    LEAF: D28 â€“ Mechanical aeration failure (blower/inlet problem
+              FAIL ->
+                [High SR]
+                  PASS ->
+                    [Low pH]
+                      PASS ->
+                        LEAF: D13 â€“ Alkalinity crash / pH too low
+                      FAIL ->
+                        LEAF: D14 â€“ High pH + ammonia stress pattern
+                  FAIL ->
+                    [Low DO]
+                      PASS ->
+                        LEAF: D33 â€“ Acute Low DO with sharp mortality spike
+                      FAIL ->
+                        LEAF: D37â€“ High pH + deaths with high feed (likely ammonia toxicity)
+          FAIL ->
+            [Low pH]
+              PASS ->
+                [Low DO]
+                  PASS ->
+                    [Low Pump]
+                      PASS ->
+                        LEAF: D26 â€“ Handling/harvest stress (short-term deaths
+                      FAIL ->
+                        LEAF: D62 â€“ DO Sensor Offset
+                  FAIL ->
+                    [Low Temp]
+                      PASS ->
+                        LEAF: D54 â€“ Underloaded Young Pond
+                      FAIL ->
+                        LEAF: D55 â€“ Heat Wave DO Managed
+              FAIL ->
+                [Low Temp]
+                  PASS ->
+                    [High Do]
+                      PASS ->
+                        LEAF: D56 â€“ High Density Growth Stunting
+                      FAIL ->
+                        LEAF: D20 â€“ Disease / pathogen-driven mortality
+                  FAIL ->
+                    [High Do]
+                      PASS ->
+                        LEAF: D30 â€“ Legacy low survival (past event	 todayâ€™s water & deaths normal)
+                      FAIL ->
+                        LEAF: D42 â€“ Historical poor SR (legacy issue	 current env & deaths OK)
+      FAIL ->
+        [Low DO]
+          PASS ->
+            [High Pump]
+              PASS ->
+                [High Do]
+                  PASS ->
+                    LEAF: D16 â€“ Heat stress (high temp + Oâ‚‚ demand)
+                  FAIL ->
+                    [Low Temp]
+                      PASS ->
+                        LEAF: D57 â€“ Early Cycle Microbial Instability
+                      FAIL ->
+                        LEAF: D24 â€“ Low DO + low pH with modest feed: carbon overdose / heavy floc
+              FAIL ->
+                LEAF: D0 â€“ Generic Low DO event (cause unknown)
+          FAIL ->
+            [Low Feed]
+              PASS ->
+                [High Pump]
+                  PASS ->
+                    [Low Temp]
+                      PASS ->
+                        LEAF: D7 â€“ High DO from over-aeration at low biomass
+                      FAIL ->
+                        LEAF: D21 â€“ Under-loaded system (too much aeration for biomass)
+                  FAIL ->
+                    LEAF: D34 â€“ Near-capacity pond
+              FAIL ->
+                [High Death]
+                  PASS ->
+                    [High Do]
+                      PASS ->
+                        LEAF: D32 â€“ Mild Low DO
+                      FAIL ->
+                        LEAF: D35 â€“ Low pH + heavy feeding
+                  FAIL ->
+                    [High Do]
+                      PASS ->
+                        LEAF: D9 â€“ High DO + high pH + high temp (photosynthesis / daytime spike)
+                      FAIL ->
+                        LEAF: D19 â€“ Overcrowding / high density stunting

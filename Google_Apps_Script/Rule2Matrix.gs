@@ -257,7 +257,7 @@ function getDatabaseData() {
   const diagnoses = [];
   const mSheet = ss.getSheetByName(TAB_MATRIX);
   if (mSheet && mSheet.getLastRow() >= 3) {
-    const dData = mSheet.getRange(3, 3, mSheet.getLastRow(), 1).getValues(); 
+    const dData = mSheet.getRange(3, 3, mSheet.getLastRow() - 2, 1).getValues(); 
     for(let i=0; i<dData.length; i++){
        let val = dData[i][0].toString().trim();
        if(val !== "" && val.toLowerCase() !== "costs:") diagnoses.push(val);
@@ -281,13 +281,13 @@ function generateCSVPayload(type) {
   
   for(let i=0; i<data.length; i++) {
      let rowContent = data[i].map(cell => {
-         let cellStr = cell.toString().replace(/'=/, '='); // Bersihkan tanda apostrof operator
-         if(cellStr.includes(',') || cellStr.includes('"') || cellStr.includes('\\n')) {
+         let cellStr = cell.toString().replace(/^'=/g, '='); // Bersihkan tanda apostrof operator
+         if(cellStr.includes(',') || cellStr.includes('"') || cellStr.includes('\n')) {
              cellStr = '"' + cellStr.replace(/"/g, '""') + '"'; // Antisipasi jika ada koma di text
          }
          return cellStr;
      });
-     csvContent += rowContent.join(",") + "\\r\\n";
+     csvContent += rowContent.join(",") + "\r\n";
   }
   
   return csvContent;
@@ -302,7 +302,12 @@ function onEdit(e) {
   const editRow = e.range.getRow();
   const editCol = e.range.getColumn();
   if (sheet.getName() === TAB_RULES && editRow >= START_ROW_RULES) {
-    if (editCol === COL_TAB_SOURCE) updateKeywordDropdown(sheet, e.range);
+    // Kolom C (Tab Source) diubah → update Keyword di Kolom B
+    if (editCol === COL_TAB_SOURCE) updateKeywordDropdown(sheet, e.range, COL_KEYWORD);
+    // Kolom H (Tab 2, col 8) diubah → update Keyword 2 di Kolom G (col 7)
+    if (editCol === 8) updateKeywordDropdown(sheet, e.range, 7);
+    // Kolom M (Tab 3, col 13) diubah → update Keyword 3 di Kolom L (col 12)
+    if (editCol === 13) updateKeywordDropdown(sheet, e.range, 12);
     if (editCol === COL_PARAMETER) syncMatrixFromRules();
   } else if (sheet.getName() === TAB_MATRIX) {
     if (editRow === 1 && editCol >= MATRIX_START_COL) syncRulesFromMatrix();
@@ -318,18 +323,26 @@ function syncRulesFromMatrix() {
   const maxC = m.getLastColumn() < MATRIX_START_COL ? MATRIX_START_COL : m.getLastColumn();
   const mHead = m.getRange(1, MATRIX_START_COL, 1, maxC - MATRIX_START_COL + 1).getValues()[0];
   const mParams = mHead.map(x => x.toString().trim()).filter(x => x !== "" && !x.toLowerCase().includes("cost"));
-  let oldData = r.getMaxRows() >= START_ROW_RULES ? r.getRange(START_ROW_RULES, 1, r.getMaxRows(), 6).getValues() : [];
+  // Baca 15 kolom (A-O) agar kolom Logic Chaining (F-O) tidak ikut terhapus
+  const TOTAL_COLS = 15;
+  let oldData = r.getMaxRows() >= START_ROW_RULES ? r.getRange(START_ROW_RULES, 1, r.getMaxRows() - START_ROW_RULES + 1, TOTAL_COLS).getValues() : [];
   
   const newData = mParams.map(p => {
     let match = oldData.find(o => o[0] && o[0].toString().trim() === p);
-    return match ? [p, match[1], match[2], match[3], match[4], match[5]] : [p, "", "", "", "", ""];
+    if (match) {
+      // Pertahankan semua 15 kolom termasuk Logic Chaining
+      return [p, match[1], match[2], match[3], match[4],
+              match[5], match[6], match[7], match[8], match[9],
+              match[10], match[11], match[12], match[13], match[14]];
+    }
+    return [p, "", "", "", "", "", "", "", "", "", "", "", "", "", ""];
   });
 
   if(r.getMaxRows() >= START_ROW_RULES){
-     r.getRange(START_ROW_RULES, 1, r.getMaxRows(), 6).clearContent();
-     r.getRange(START_ROW_RULES, COL_KEYWORD, r.getMaxRows(), 1).clearDataValidations();
+     r.getRange(START_ROW_RULES, 1, r.getMaxRows() - START_ROW_RULES + 1, TOTAL_COLS).clearContent();
+     r.getRange(START_ROW_RULES, COL_KEYWORD, r.getMaxRows() - START_ROW_RULES + 1, 1).clearDataValidations();
   }
-  if(newData.length > 0) r.getRange(START_ROW_RULES, 1, newData.length, 6).setValues(newData);
+  if(newData.length > 0) r.getRange(START_ROW_RULES, 1, newData.length, TOTAL_COLS).setValues(newData);
   refreshAllDropdowns();
   
   newData.forEach((row, i) => {
@@ -390,8 +403,11 @@ function applyMatrixDropdown(m) {
    }
 }
 
-function updateKeywordDropdown(rSheet, ed) {
-  const name = ed.getValue(), cell = rSheet.getRange(ed.getRow(), COL_KEYWORD);
+function updateKeywordDropdown(rSheet, ed, targetCol) {
+  // targetCol: kolom tujuan dropdown Keyword (default = COL_KEYWORD/Kolom B)
+  const col = targetCol || COL_KEYWORD;
+  const name = ed.getValue();
+  const cell = rSheet.getRange(ed.getRow(), col);
   cell.clearDataValidations();
   if(!name) { cell.setValue(''); return; }
   const tSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
@@ -407,13 +423,89 @@ function refreshAllDropdowns() {
   const r = ss.getSheetByName(TAB_RULES);
   if(!r) return;
   const tn = ss.getSheets().map(s => s.getName()).filter(n => ![TAB_RULES, TAB_MATRIX, "TUTORIAL"].includes(n));
-  const lr = r.getMaxRows();
-  if(lr >= START_ROW_RULES){
-     r.getRange(START_ROW_RULES, COL_TAB_SOURCE, lr, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(tn, true).build());
-     const op = r.getRange(START_ROW_RULES, COL_OPERATOR, lr, 1);
-     op.setNumberFormat('@');  
-     op.setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList([">", "<", ">=", "<=", "'="], true).build());
-  }
+  const maxRows = r.getMaxRows();
+  const numRows = maxRows - START_ROW_RULES + 1; // Jumlah baris yang benar
+  if(numRows < 1) return;
+
+  // Kolom C (Tab Source), H (Tab 2), M (Tab 3) → Dropdown nama sheet
+  const tabValidation = SpreadsheetApp.newDataValidation().requireValueInList(tn, true).build();
+  r.getRange(START_ROW_RULES, COL_TAB_SOURCE, numRows, 1).setDataValidation(tabValidation); // Kolom C
+  r.getRange(START_ROW_RULES, 8, numRows, 1).setDataValidation(tabValidation);              // Kolom H (Tab 2)
+  r.getRange(START_ROW_RULES, 13, numRows, 1).setDataValidation(tabValidation);             // Kolom M (Tab 3)
+
+  // Kolom D (Operator), I (Op 2), N (Op 3) → Dropdown operator
+  const opValidation = SpreadsheetApp.newDataValidation().requireValueInList([">", "<", ">=", "<=", "'="], true).build();
+  const opRange = r.getRange(START_ROW_RULES, COL_OPERATOR, numRows, 1);
+  opRange.setNumberFormat('@');
+  opRange.setDataValidation(opValidation);                                                     // Kolom D
+  r.getRange(START_ROW_RULES, 9,  numRows, 1).setNumberFormat('@').setDataValidation(opValidation); // Kolom I (Op 2)
+  r.getRange(START_ROW_RULES, 14, numRows, 1).setNumberFormat('@').setDataValidation(opValidation); // Kolom N (Op 3)
+
+  // Kolom F (Logic 1) & K (Logic 2) → Dropdown AND / OR / TIME
+  const logicValidation = SpreadsheetApp.newDataValidation().requireValueInList(["AND", "OR", "TIME"], true).build();
+  r.getRange(START_ROW_RULES, 6,  numRows, 1).setDataValidation(logicValidation); // Kolom F (Logic 1)
+  r.getRange(START_ROW_RULES, 11, numRows, 1).setDataValidation(logicValidation); // Kolom K (Logic 2)
+
+  SpreadsheetApp.getActive().toast("✅ Dropdown berhasil diperbarui!", "Selesai", 3);
+}
+
+/**
+ * Fungsi cepat: hanya pasang dropdown AND/OR/TIME di Kolom F dan K
+ * Jalankan ini jika dropdown Logic tidak muncul.
+ */
+function setupLogicDropdowns() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const r = ss.getSheetByName(TAB_RULES);
+  if (!r) { SpreadsheetApp.getActive().toast("Sheet tidak ditemukan!", "Error", 3); return; }
+
+  const maxRows = r.getMaxRows();
+  const numRows = maxRows - START_ROW_RULES + 1;
+  if (numRows < 1) return;
+
+  const logicValidation = SpreadsheetApp.newDataValidation()
+    .requireValueInList(["AND", "OR", "TIME"], true)
+    .build();
+
+  r.getRange(START_ROW_RULES, 6,  numRows, 1).setDataValidation(logicValidation); // Kolom F
+  r.getRange(START_ROW_RULES, 11, numRows, 1).setDataValidation(logicValidation); // Kolom K
+
+  SpreadsheetApp.getActive().toast("✅ Dropdown AND/OR/TIME berhasil dipasang di Kolom F dan K!", "Selesai", 5);
+}
+
+
+/**
+ * Pasang label header di baris pertama untuk kolom Logic
+ * Kolom G-O: Keyword 2, Tab 2, Op 2, Nilai 2, Logic 2, Keyword 3, Tab 3, Op 3, Nilai 3
+ */
+function setupLogicHeaders() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const r = ss.getSheetByName(TAB_RULES);
+  if (!r) return;
+
+  // Definisi header: [kolom, label, warna background]
+  const headerDefs = [
+    [6,  "Logic",      "#fce8b2", "#b06000"],  // F - Logic 1 (kuning)
+    [7,  "Keyword 2",  "#c9daf8", "#1c4587"],  // G
+    [8,  "Tab 2",      "#c9daf8", "#1c4587"],  // H
+    [9,  "Op 2",       "#c9daf8", "#1c4587"],  // I
+    [10, "Nilai 2",    "#c9daf8", "#1c4587"],  // J
+    [11, "Logic 2",    "#fce8b2", "#b06000"],  // K - Logic 2 (kuning)
+    [12, "Keyword 3",  "#d9ead3", "#274e13"],  // L
+    [13, "Tab 3",      "#d9ead3", "#274e13"],  // M
+    [14, "Op 3",       "#d9ead3", "#274e13"],  // N
+    [15, "Nilai 3",    "#d9ead3", "#274e13"],  // O
+  ];
+
+  headerDefs.forEach(([col, label, bg, fg]) => {
+    r.getRange(1, col)
+      .setValue(label)
+      .setFontWeight("bold")
+      .setBackground(bg)
+      .setFontColor(fg)
+      .setHorizontalAlignment("center");
+  });
+
+  SpreadsheetApp.getActive().toast("✅ Header Kolom Logic (G-O) berhasil dipasang!", "Selesai", 4);
 }
 
 function forceUpdateAllRelatedKeywords(n) { 
@@ -423,7 +515,7 @@ function forceUpdateAllRelatedKeywords(n) {
   if (!r || !s) return;
   const valid = s.getRange(1, 1, 1, s.getLastColumn()||1).getValues()[0].filter(h => h !== "");
   if(valid.length === 0 || r.getMaxRows() < START_ROW_RULES) return;
-  const rs = r.getRange(START_ROW_RULES, COL_TAB_SOURCE, r.getMaxRows(), 1).getValues();
+  const rs = r.getRange(START_ROW_RULES, COL_TAB_SOURCE, r.getMaxRows() - START_ROW_RULES + 1, 1).getValues();
   rs.forEach((src, i) => {
     if(src[0].toString().trim() === n) {
        let c = r.getRange(START_ROW_RULES + i, COL_KEYWORD);

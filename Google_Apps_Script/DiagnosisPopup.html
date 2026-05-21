@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>BIOFLOK Diagnostic</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Segoe UI', Arial, sans-serif;
+  background: #f8f9fa;
+  font-size: 13px;
+  color: #333;
+}
+#loading {
+  text-align: center;
+  padding: 60px 20px;
+  color: #666;
+}
+#spinner {
+  display: inline-block;
+  width: 32px; height: 32px;
+  border: 4px solid #ddd;
+  border-top-color: #1a73e8;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-bottom: 12px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+#result { display: none; padding: 12px 16px; }
+
+/* STATUS BANNER */
+.status-banner {
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-weight: bold;
+  font-size: 14px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.status-anomaly { background: #fce8e6; color: #c62828; border-left: 4px solid #e53935; }
+.status-normal  { background: #e8f5e9; color: #2e7d32; border-left: 4px solid #43a047; }
+
+/* SECTION */
+.section { margin-bottom: 14px; }
+.section-title {
+  font-weight: bold;
+  font-size: 12px;
+  color: #1a73e8;
+  padding: 5px 0;
+  border-bottom: 2px solid #e8f0fe;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* TREE ROWS */
+.tree-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: 5px;
+  margin: 2px 0;
+  font-size: 12px;
+  font-family: monospace;
+}
+.tree-row.pass { background: #e8f5e9; color: #1b5e20; }
+.tree-row.fail { background: #fce8e6; color: #b71c1c; }
+.tree-row.na   { background: #f5f5f5; color: #757575; }
+.tree-tag {
+  font-size: 11px;
+  font-weight: bold;
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+.tag-pass { background: #a5d6a7; color: #1b5e20; }
+.tag-fail { background: #ef9a9a; color: #b71c1c; }
+.tag-na   { background: #e0e0e0; color: #757575; }
+
+/* BAYES CARDS */
+.bayes-card {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin: 5px 0;
+}
+.bayes-card.top { border-color: #1a73e8; background: #e8f0fe; }
+.bayes-name {
+  font-weight: bold;
+  font-size: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.top-badge {
+  background: #1a73e8;
+  color: #fff;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 9px;
+}
+.bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+.bar-bg {
+  flex: 1;
+  background: #e0e0e0;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #1a73e8, #34a853);
+  transition: width 0.6s ease;
+}
+.bar-conf { font-weight: bold; color: #1a73e8; font-size: 12px; min-width: 35px; }
+.match-line { font-size: 11px; padding: 1px 0; }
+.m-yes { color: #2e7d32; }
+.m-no  { color: #c62828; }
+
+/* CONCLUSION */
+.conclusion-box {
+  background: #e8f0fe;
+  border: 1px solid #1a73e8;
+  border-radius: 8px;
+  padding: 10px 14px;
+  text-align: center;
+  font-weight: bold;
+  font-size: 13px;
+  color: #1a237e;
+}
+
+/* SOP */
+.level-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-weight: bold;
+  font-size: 11px;
+  margin-bottom: 6px;
+}
+.critical { background: #fce8e6; color: #b71c1c; }
+.warning  { background: #fff8e1; color: #f57f17; }
+.info     { background: #e3f2fd; color: #1565c0; }
+
+.sop-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 5px;
+  margin: 2px 0;
+  font-size: 12px;
+  background: #fff8e1;
+  border-left: 3px solid #fdd835;
+}
+.sop-num { font-weight: bold; color: #f57f17; min-width: 18px; }
+
+/* SENSOR WARN */
+.warn-item {
+  background: #fff8e1;
+  color: #e65100;
+  padding: 5px 10px;
+  border-radius: 5px;
+  margin: 2px 0;
+  font-size: 12px;
+  border-left: 3px solid #ffa726;
+}
+
+/* DATA OVERVIEW */
+.eval-item {
+  font-size: 11.5px;
+  padding: 4px 8px;
+  margin-bottom: 3px;
+  border-radius: 4px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.eval-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.eval-right {
+  font-family: monospace;
+  font-size: 10.5px;
+  color: #666;
+}
+.eval-pass { background: #e8f5e9; border-left: 3px solid #4caf50; }
+.eval-fail { background: #ffebee; border-left: 3px solid #f44336; }
+.eval-na   { background: #f3f4f6; border-left: 3px solid #9aa0a6; color:#777; }
+.eval-pass b { color: #2e7d32; }
+.eval-fail b { color: #c62828; }
+.eval-na b { color: #5f6368; }
+
+/* VOI SECTION + FEEDBACK */
+.voi-item {
+  background: #f3e5f5;
+  border-left: 3px solid #7b1fa2;
+  padding: 8px 12px;
+  border-radius: 5px;
+  margin: 4px 0;
+}
+.voi-rank { font-weight: bold; color: #6a1b9a; font-size: 12px; }
+.voi-desc { font-size: 11px; color: #666; margin-top: 2px; }
+.voi-guide {
+  font-size: 11px;
+  color: #4a148c;
+  background: #ede7f6;
+  border-left: 3px solid #ab47bc;
+  padding: 5px 8px;
+  border-radius: 0 4px 4px 0;
+  margin: 5px 0 4px 0;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.voi-form {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.voi-input {
+  border: 1px solid #ce93d8;
+  border-radius: 5px;
+  padding: 5px 8px;
+  font-size: 12px;
+  flex: 1;
+  min-width: 120px;
+  outline: none;
+}
+.voi-input:focus { border-color: #7b1fa2; }
+.voi-submit {
+  background: #7b1fa2;
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  padding: 5px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.voi-submit:hover { background: #6a1b9a; }
+.voi-sent { color: #2e7d32; font-size: 11px; font-style: italic; }
+
+/* BOTTOM BUTTONS */
+.btn-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+  border-top: 1px solid #e0e0e0;
+  padding-top: 12px;
+}
+.btn {
+  flex: 1;
+  padding: 9px;
+  border: none;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+}
+.btn-primary   { background: #1a73e8; color: #fff; }
+.btn-secondary { background: #e8f0fe; color: #1a73e8; }
+.btn-primary:hover   { background: #1558b0; }
+.btn-secondary:hover { background: #d2e3fc; }
+
+.error-box { 
+  background: #fce8e6; 
+  color: #b71c1c; 
+  padding: 12px; 
+  border-radius: 8px;    
+  box-sizing: border-box;
+  font-size: 12px;
+}
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div id="spinner"></div><br>
+  Menjalankan Diagnosa...<br>
+  <small style="color:#aaa">Membaca sensor &amp; menghitung probabilitas</small>
+</div>
+
+<div id="result">
+  <div id="status-banner" class="status-banner"></div>
+
+  <!-- SECTION OVERVIEW: DATA EVALUATION -->
+  <div id="eval-section" class="section" style="display:none; margin-bottom:8px">
+    <div class="section-title">📊 OVERVIEW DATA SENSOR</div>
+    <div id="eval-container"></div>
+  </div>
+
+  <!-- SECTION: 2-COLUMN COMPARISON -->
+  <div id="comparison-section"></div>
+
+  <!-- SECTION 3: KESIMPULAN -->
+  <div class="section">
+    <div class="section-title">🎯 KESIMPULAN FINAL</div>
+    <div id="conclusion-container"></div>
+  </div>
+
+  <!-- SECTION 4: SOP (conditional) -->
+  <div id="sop-section" class="section" style="display:none">
+    <div class="section-title">📋 TINDAKAN DARURAT</div>
+    <div id="sop-container"></div>
+  </div>
+
+  <!-- SECTION 5: SENSOR WARNINGS (conditional) -->
+  <div id="warn-section" class="section" style="display:none">
+    <div class="section-title">⚠️ SENSOR MATI / DATA BASI</div>
+    <div id="warn-container"></div>
+  </div>
+
+  <!-- SECTION 6: VOI + FEEDBACK INPUT (conditional) -->
+  <div id="voi-section" class="section" style="display:none">
+    <div class="section-title">🔬 REKOMENDASI TES BERIKUTNYA (VOI)</div>
+    <div id="voi-container"></div>
+  </div>
+
+  <!-- BUTTONS -->
+  <div class="btn-row">
+    <button class="btn btn-secondary" onclick="google.script.host.close()">✖ Tutup</button>
+    <button class="btn btn-primary" onclick="rerunDiagnosis()">🔄 Diagnosa Ulang</button>
+  </div>
+</div>
+
+<script>
+var _resultData = null;
+
+// ─── Load data via google.script.run (AMAN, tidak pakai scriptlet) ───
+window.onload = function() {
+  google.script.run
+    .withSuccessHandler(function(data) {
+      _resultData = data;
+      renderResult(data);
+    })
+    .withFailureHandler(function(err) {
+      document.getElementById('loading').innerHTML =
+        '<div class="error-box">❌ Error: ' + (err.message || err) + '</div>';
+    })
+    .getStoredDiagnosisResult();
+};
+
+function rerunDiagnosis() {
+  document.getElementById('result').style.display = 'none';
+  document.getElementById('loading').style.display = 'block';
+  document.getElementById('loading').innerHTML =
+    '<div id="spinner"></div><br>Memuat ulang diagnosa...<br><small style="color:#aaa">Mohon tunggu</small>';
+  google.script.run
+    .withSuccessHandler(function(data) {
+      _resultData = data;
+      renderResult(data);
+    })
+    .withFailureHandler(function(err) {
+      document.getElementById('loading').innerHTML =
+        '<div class="error-box">❌ Error: ' + (err.message || err) + '</div>';
+    })
+    .runDiagnosisAndStore();
+}
+
+// ─── RENDER RESULT ───────────────────────────────────────────────────
+function renderResult(data) {
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('result').style.display  = 'block';
+
+  var isNormal = data.status === 'NORMAL';
+  var isOffline = data.status === 'OFFLINE';
+
+  // STATUS BANNER
+  var banner = document.getElementById('status-banner');
+  banner.style.backgroundColor = ''; banner.style.color = ''; banner.style.borderLeft = '';
+  if(isNormal) {
+    banner.className = 'status-banner status-normal';
+    banner.innerHTML = '✅ KONDISI AMAN TERKENDALI';
+  } else if(isOffline) {
+    banner.className = 'status-banner';
+    banner.style.backgroundColor = '#f1f3f4';
+    banner.style.color = '#5f6368';
+    banner.style.borderLeft = '4px solid #9aa0a6';
+    banner.innerHTML = '🔌 SISTEM OFFLINE (Data Basi / Kosong)';
+  } else {
+    var alarmCount = (data.alarms || []).length;
+    banner.className = 'status-banner status-anomaly';
+    // resets manual styles if re-rendering over an offline run
+    banner.style.backgroundColor = ''; banner.style.color = ''; banner.style.borderLeft = '';
+    banner.innerHTML = '🚨 ANOMALI TERDETEKSI' +
+      (alarmCount > 0 ? '  &nbsp;|&nbsp; ' + alarmCount + ' Alarm' : '');
+  }
+
+  // EVALUATED DATA OVERVIEW
+  var evalDiv = document.getElementById('eval-container');
+  var evData = data.evaluated_data || [];
+  if(evData.length > 0) {
+      document.getElementById('eval-section').style.display = 'block';
+      
+      // Sort: N/A -> FAIL -> PASS
+      evData.sort(function(a, b) {
+          var wA = a.status === 'N/A' ? 0 : (a.status === 'FAIL' ? 1 : 2);
+          var wB = b.status === 'N/A' ? 0 : (b.status === 'FAIL' ? 1 : 2);
+          return wA - wB;
+      });
+
+      var evalHtml = '';
+      evData.forEach(function(d) {
+          var cls = d.status === 'PASS' ? 'eval-pass' : (d.status === 'FAIL' ? 'eval-fail' : 'eval-na');
+          var icon = d.status === 'PASS' ? '✅' : (d.status === 'FAIL' ? '❌' : '⚠️');
+          var title = '<b>' + escHtml(d.keyword) + '</b> <span style="font-size:9.5px; opacity:0.7">[' + escHtml(d.parameter) + ']</span>';
+          var rightTxt = d.status === 'N/A' ? '<i>Basi: '+ d.ageMin+'m</i>' : escHtml(d.desc);
+          
+          evalHtml += '<div class="eval-item ' + cls + '">'
+                   + '  <div class="eval-left"><span>' + icon + '</span> <span>' + title + '</span></div>'
+                   + '  <div class="eval-right">' + rightTxt + '</div>'
+                   + '</div>';
+      });
+      evalDiv.innerHTML = evalHtml;
+  } else {
+      document.getElementById('eval-section').style.display = 'none';
+  }
+
+  // ─── SIDE-BY-SIDE TREE & BAYES ─────────────────────────────
+  var compDiv = document.getElementById('comparison-section');
+  var steps = data.decision_tree || [];
+  var ranking = data.bayesian_ranking || [];
+  
+  if(!isNormal && !isOffline) {
+      // 1. LEFT SIDE: DECISION PATH
+      var leftHtml = '<div style="flex:1; border:1px solid #e0e0e0; border-radius:6px; background:#fff; overflow:hidden;">'
+                   + '<div style="background:#f8f9fa; padding:10px 14px; font-weight:bold; font-size:11px; color:#5f6368; border-bottom:1px solid #e0e0e0;">DECISION PATH (TREE LOGIC)</div>'
+                   + '<div style="padding:14px;">';
+      
+      if(steps.length > 0) {
+          steps.forEach(function(s, i) {
+             var parts = s.split(/→|->/);
+             var feature = (parts[0] || '').trim();
+             var statusPart = (parts[1] || '').trim();
+             
+             var isPass = statusPart.toUpperCase().indexOf('PASS') === 0;
+             var isFail = statusPart.toUpperCase().indexOf('FAIL') === 0;
+             var tagXml = isPass ? '<span style="color:#2e7d32; border:1px solid #4CAF50; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:10px;">✓ PASS</span>' 
+                        : (isFail ? '<span style="color:#c62828; border:1px solid #F44336; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:10px;">✕ FAIL</span>'
+                                  : '<span style="color:#666; border:1px solid #999; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:10px;">⚪ N/A</span>');
+
+             var cleanFeature = escHtml(feature).replace(/^\[/, '').replace(/\]$/, '');
+             leftHtml += '<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; margin-bottom:4px; border-left:2px solid #fed7aa; padding-left:12px;">'
+                       + '  <div style="font-weight:bold; color:#333; font-size:12px;">'
+                       + '    <span style="display:inline-block; width:18px; color:#999; background:#e2e8f0; text-align:center; border-radius:3px; padding:1px 0; font-size:10px; margin-right:6px;">'+(i+1)+'</span> ' + cleanFeature
+                       + '  </div>'
+                       + '  <div>' + tagXml + '</div>'
+                       + '</div>';
+          });
+          if(ranking.length > 0 && steps[steps.length-1].toUpperCase().indexOf('N/A') === -1) {
+              leftHtml += '<div style="padding-top:12px; border-left:2px solid #fed7aa; padding-left:12px; color:#e65100; font-weight:bold; font-size:12px;">↓ ' + escHtml(ranking[0].diagnosis) + '</div>';
+          } else {
+              leftHtml += '<div style="padding-top:12px; border-left:2px solid #fed7aa; padding-left:12px; color:#f57f17; font-weight:bold; font-size:12px;">⚠️ Jalur Terputus</div>';
+          }
+      } else {
+          leftHtml += '<div style="color:#aaa; font-size:11px;">(Tidak ada rute pohon)</div>';
+      }
+      leftHtml += '</div></div>';
+
+      // 2. RIGHT SIDE: DEFINITION CHECK
+      var rightHtml = '<div style="flex:1; border:1px solid #e0e0e0; border-radius:6px; background:#fff; overflow:hidden;">'
+                    + '<div style="background:#f8f9fa; padding:10px 14px; font-weight:bold; font-size:11px; color:#5f6368; border-bottom:1px solid #e0e0e0;">DEFINITION CHECK (MATRIX)</div>'
+                    + '<div style="padding:0; max-height:280px; overflow-y:auto;">'
+                    + '<table style="width:100%; border-collapse:collapse; font-size:11px;">';
+      
+      if(ranking.length > 0) {
+          var matches = ranking[0].matched_params || [];
+          var mismatches = ranking[0].mismatched_params || [];
+          var missed = ranking[0].missed_rules || [];
+          var reqMap = ranking[0].req_map || {};
+          
+          rightHtml += '<tr style="background:#f1f3f4; color:#5f6368; text-align:left;">'
+                     + '<th style="padding:6px 14px;font-weight:normal;">Test</th>'
+                     + '<th style="padding:6px 14px;font-weight:normal;">Req</th>'
+                     + '<th style="padding:6px 14px;text-align:right;font-weight:normal;">Status</th></tr>';
+
+          matches.forEach(function(m) {
+              var req = reqMap[m] || 'PASS';
+              rightHtml += '<tr style="border-bottom:1px solid #f1f3f4;">'
+                         + '  <td style="padding:8px 14px; color:#333; font-weight:bold;">'+escHtml(m)+'</td>'
+                         + '  <td style="padding:8px 14px; color:#333; font-weight:bold;">'+escHtml(req)+'</td>'
+                         + '  <td style="padding:8px 14px; text-align:right; font-weight:bold; color:#2e7d32; white-space:nowrap;">✅ Verified</td>'
+                         + '</tr>';
+          });
+          mismatches.forEach(function(m) {
+              var req = reqMap[m] || 'FAIL';
+              rightHtml += '<tr style="border-bottom:1px solid #f1f3f4;">'
+                         + '  <td style="padding:8px 14px; color:#333;">'+escHtml(m)+'</td>'
+                         + '  <td style="padding:8px 14px; color:#333; font-weight:bold;">'+escHtml(req)+'</td>'
+                         + '  <td style="padding:8px 14px; text-align:right; font-weight:bold; color:#c62828; white-space:nowrap;">❌ Mismatch</td>'
+                         + '</tr>';
+          });
+          missed.forEach(function(m) {
+              var req = reqMap[m] || 'FAIL';
+              rightHtml += '<tr style="border-bottom:1px solid #f1f3f4;">'
+                         + '  <td style="padding:8px 14px; color:#888;">'+escHtml(m)+'</td>'
+                         + '  <td style="padding:8px 14px; color:#888; font-weight:bold;">'+escHtml(req)+'</td>'
+                         + '  <td style="padding:8px 14px; text-align:right; color:#888; font-style:italic; white-space:nowrap;">⚪ Untested</td>'
+                         + '</tr>';
+          });
+      } else {
+          rightHtml += '<tr><td style="padding:14px; color:#aaa;">(Tidak ada data Bayesian)</td></tr>';
+      }
+      rightHtml += '</table></div></div>';
+
+      compDiv.innerHTML = '<div style="display:flex; gap:16px; margin-bottom:16px; align-items:flex-start;">' + leftHtml + rightHtml + '</div>';
+
+      // 3. OTHER BAYES TARGETS
+      var otherBayesHtml = '';
+      if(ranking.length > 1) {
+          otherBayesHtml += '<div class="section-title" style="margin-top:16px;">🧪 PROBABILITAS KECOCOKAN LAINNYA</div>';
+          otherBayesHtml += ranking.slice(1).map(function(b, i) {
+               var conf = b.confidence || 0;
+               var w    = Math.min(100, conf);
+               return '<div class="bayes-card" style="padding:8px; margin-bottom:4px;">'
+                    + '<div class="bayes-name"><span>'+(i+2)+'. '+escHtml(b.diagnosis)+'</span></div>'
+                    + '<div class="bar-wrap" style="margin-bottom:0;">'
+                    + '<div class="bar-bg"><div class="bar-fill" style="width:'+w+'%"></div></div>'
+                    + '<div class="bar-conf">'+conf+'%</div>'
+                    + '</div></div>';
+          }).join('');
+      }
+      compDiv.innerHTML += otherBayesHtml;
+
+  } else {
+      compDiv.innerHTML = '';
+  }
+
+  // KESIMPULAN FINAL
+  var concDiv = document.getElementById('conclusion-container');
+  if(isNormal) {
+    concDiv.innerHTML = '<div class="conclusion-box" style="background:#e8f5e9;border-color:#43a047;color:#1b5e20;">'
+      + '✅ Semua parameter dalam batas aman.<br>👉 Tambak terkendali. Lanjutkan monitoring.</div>';
+  } else if(isOffline) {
+    concDiv.innerHTML = '<div class="conclusion-box" style="background:#f8f9fa;border-color:#9aa0a6;color:#5f6368;">'
+      + '⚠️ <b>DIAGNOSA DIHENTIKAN SEMENTARA</b><br>Seluruh data kolam Anda sudah lewat dari masa tenggang alat. Tidak ada data segar yang bisa dianalisa mesin.</div>';
+  } else if(ranking.length > 0) {
+    var top = ranking[0];
+    concDiv.innerHTML = '<div class="conclusion-box">Kedua engine (Tree &amp; Bayes) sepakat:<br>'
+      + '👉 <b>'+escHtml(top.diagnosis.toUpperCase())+'</b> &nbsp;('+top.confidence+'%)</div>';
+
+    // SOP
+    if(top.sop && top.sop.length > 0) {
+      document.getElementById('sop-section').style.display = '';
+      var lvl = (top.level || 'INFO').toUpperCase();
+      var lvlClass = lvl === 'CRITICAL' ? 'critical' : (lvl === 'WARNING' ? 'warning' : 'info');
+      var sopHtml = '<div><span class="level-badge '+lvlClass+'">⚡ '+lvl+'</span>'
+                  + ' — respons secepatnya!</div>';
+      sopHtml += top.sop.map(function(s, i) {
+        return '<div class="sop-item"><span class="sop-num">'+(i+1)+'.</span><span>🔹 '+escHtml(s)+'</span></div>';
+      }).join('');
+      document.getElementById('sop-container').innerHTML = sopHtml;
+    } else {
+      document.getElementById('sop-section').style.display = 'none';
+    }
+  } else {
+    document.getElementById('sop-section').style.display = 'none';
+    concDiv.innerHTML = '<div style="color:#aaa;font-size:11px;">(Tidak cukup data untuk menyimpulkan)</div>';
+  }
+
+  // SENSOR WARNINGS
+  var warns = data.sensor_warnings || [];
+  if(warns.length > 0) {
+    document.getElementById('warn-section').style.display = '';
+    document.getElementById('warn-container').innerHTML = warns.map(function(w) {
+      return '<div class="warn-item">⚠️ '+escHtml(w)+'</div>';
+    }).join('');
+  } else {
+    document.getElementById('warn-section').style.display = 'none';
+  }
+
+  // VOI + FEEDBACK FORM
+  var voi = data.voi_recommendation || [];
+  if(voi.length > 0) {
+    document.getElementById('voi-section').style.display = '';
+    document.getElementById('voi-container').innerHTML = voi.map(function(v, i) {
+      var inputId  = 'voi-input-'+i;
+      var statusId = 'voi-status-'+i;
+      var caraCekHtml = '';
+      if(v.cara_cek && v.cara_cek.trim() !== '') {
+        caraCekHtml = '<div class="voi-guide">📖 <b>Cara Cek:</b> '+escHtml(v.cara_cek)+'</div>';
+      } else {
+        caraCekHtml = '<div class="voi-guide" style="color:#bbb;font-style:italic;">'
+          + '(Belum ada panduan. Isi di tab SOP Tindakan kolom I &amp; J)</div>';
+      }
+      return '<div class="voi-item">'
+           + '<div class="voi-rank">#'+v.priority_rank+' → Ukur <b>'+escHtml(v.keyword || v.parameter)+'</b>'
+           +   ' &nbsp;<small style="color:#9c27b0">(Gain: '+v.information_gain_score
+           +   ', Dampak: '+v.urgency_impact+'%)</small></div>'
+           + caraCekHtml
+           + '<div class="voi-desc">Masukkan nilai hasil pengukuran manual:</div>'
+           + '<div class="voi-form">'
+           +   '<input type="text" id="'+inputId+'" class="voi-input" placeholder="Contoh: 6.5">'
+           +   '<button class="voi-submit" onclick="submitVOI(\''+escHtml(v.parameter).replace(/'/g, "\\'")+'\',\''+inputId+'\',\''+statusId+'\')">💾 Simpan</button>'
+           +   '<span id="'+statusId+'"></span>'
+           + '</div>'
+           + '</div>';
+    }).join('');
+  } else {
+    document.getElementById('voi-section').style.display = 'none';
+  }
+
+}
+
+// ─── SUBMIT VOI FEEDBACK ─────────────────────────────────────────────
+function submitVOI(paramName, inputId, statusId) {
+  var val = document.getElementById(inputId).value.trim();
+  if(!val) { alert('Masukkan nilai pengukuran dulu!'); return; }
+
+  document.getElementById(statusId).innerHTML = '<span style="color:#888">⏳ Menyimpan...</span>';
+  document.getElementById(inputId).disabled = true;
+
+  google.script.run
+    .withSuccessHandler(function() {
+      document.getElementById(statusId).innerHTML = '<span class="voi-sent">✅ Tersimpan!</span>';
+    })
+    .withFailureHandler(function(err) {
+      document.getElementById(statusId).innerHTML = '<span style="color:red">❌ '+err.message+'</span>';
+      document.getElementById(inputId).disabled = false;
+    })
+    .submitVoiFeedback(paramName, val);
+}
+
+function escHtml(str) {
+  if(!str) return '';
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>

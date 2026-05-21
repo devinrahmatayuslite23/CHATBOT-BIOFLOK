@@ -33,7 +33,7 @@ function handleRequest(e) {
     // ACTION: run_diagnosis (FULL - simpan ke History)
     // ======================
     if (action === "run_diagnosis") {
-      const resultObj = runAutoDiagnosis(); // Jalankan + simpan ke History
+      const resultObj = runCombinedDiagnosis(true); // Jalankan + simpan ke History
       return _jsonResponse(_buildDiagnosisPayload(resultObj));
     }
     
@@ -41,7 +41,7 @@ function handleRequest(e) {
     // ACTION: get_diagnosis_detail (READ-ONLY - TIDAK simpan ke History)
     // ======================
     if (action === "get_diagnosis_detail") {
-      const resultObj = runAutoDiagnosisNoSave(); // Jalankan TANPA simpan
+      const resultObj = runCombinedDiagnosis(false); // Jalankan TANPA simpan
       return _jsonResponse(_buildDiagnosisPayload(resultObj));
     }
 
@@ -187,7 +187,7 @@ function _generateAiContext(type) {
   }
   
   if (type === "diagnosis") {
-     const diagObj = runAutoDiagnosisNoSave();
+     const diagObj = runCombinedDiagnosis(false);
      
      // 1. Get recent trends
      const waterSheet = ss.getSheetByName("Water Quality");

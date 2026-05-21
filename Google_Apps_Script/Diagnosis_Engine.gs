@@ -1,6 +1,6 @@
 /**
  * =========================================================================
- * âš™ï¸ DIAGNOSIS ENGINE (DUAL-BRAIN AI) - GOOGLE APPS SCRIPT EDITION V2
+ * ⚙️ DIAGNOSIS ENGINE (DUAL-BRAIN AI) - GOOGLE APPS SCRIPT EDITION V2
  * =========================================================================
  * Arsitektur "Satu Otak, Dua Wajah"
  * Pintu 1: Sensor & Alarm (Batas Aman/Anomali)
@@ -51,7 +51,7 @@ function _fetchLatestValue(ss, tabName, keyword, config) {
     if(h.includes("time") || h.includes("stamp") || h.includes("waktu")) timestampColIdx = i;
   }
 
-  Logger.log(`[DEBUG] Tab="${tabName}" Keyword="${keyword}" â†’ kolomIdx=${colIdx}, header="${colIdx>=0?headers[colIdx]:'TIDAK ADA'}"`);
+  Logger.log(`[DEBUG] Tab="${tabName}" Keyword="${keyword}" → kolomIdx=${colIdx}, header="${colIdx>=0?headers[colIdx]:'TIDAK ADA'}"`);
 
   if(colIdx === -1) return {value: null, status: "N/A", ageMin: 9999, displayVal: "N/A"};
   
@@ -86,7 +86,7 @@ function _fetchLatestValue(ss, tabName, keyword, config) {
 // =========================================================================
 function _checkSensorAlarms(ss, config) {
   const sheet = ss.getSheetByName("Sensor & Alarm");
-  // Jika tab kosong / tidak ada â†’ semua aman, diagnosis tetap jalan
+  // Jika tab kosong / tidak ada → semua aman, diagnosis tetap jalan
   if(!sheet) return {isSafe: true, alarms: [], sensorWarnings: [], rawDataCache: {}};
   
   const data = sheet.getDataRange().getValues();
@@ -94,8 +94,8 @@ function _checkSensorAlarms(ss, config) {
   const dataRows = data.slice(1).filter(r => r[0] && r[0].toString().trim() !== "");
   if(dataRows.length === 0) return {isSafe: true, alarms: [], sensorWarnings: [], rawDataCache: {}};
   
-  const alarms = [];        // â† Nilai MELEWATI batas aman (anomali nyata)
-  const sensorWarnings = []; // â† Sensor mati/basi (catatan, bukan pemblokir)
+  const alarms = [];        // ← Nilai MELEWATI batas aman (anomali nyata)
+  const sensorWarnings = []; // ← Sensor mati/basi (catatan, bukan pemblokir)
   const rawDataCache = {};
   
   for(let i=0; i<dataRows.length; i++) {
@@ -118,23 +118,23 @@ function _checkSensorAlarms(ss, config) {
     // Sensor mati: catat sebagai sensorWarnings BUKAN alarms
     // (tidak memblokir diagnosis, hanya dicatat di JSON output)
     if(valObj.status === "N/A") {
-      sensorWarnings.push(`âš ï¸ ${name}: Data tidak ada/basi (>${config.sensor_timeout_min} mnt)`);
+      sensorWarnings.push(`⚠️ ${name}: Data tidak ada/basi (>${config.sensor_timeout_min} mnt)`);
       continue;
     }
     
-    // Cek apakah nilai melewati batas aman â†’ ini barulah ALARM NYATA
+    // Cek apakah nilai melewati batas aman → ini barulah ALARM NYATA
     if(valObj.value !== null && amanMin !== "" && amanMax !== "") {
       const numMin = parseFloat(amanMin);
       const numMax = parseFloat(amanMax);
       if(!isNaN(numMin) && !isNaN(numMax)) {
         const num = parseFloat(valObj.value.toString().replace(",", "."));
         if(!isNaN(num) && (num < numMin || num > numMax)) {
-          alarms.push(`âŒ ${name}: ${num} (Batas Aman: ${numMin}-${numMax}) â†’ ${alarmMsg}`);
+          alarms.push(`❌ ${name}: ${num} (Batas Aman: ${numMin}-${numMax}) → ${alarmMsg}`);
         }
       } else {
         // Perbandingan teks (misal: Blower ON/OFF)
         if(valObj.value.toString().trim().toUpperCase() !== amanMin.toString().toUpperCase()) {
-          alarms.push(`ðŸš¨ ${name}: ${valObj.value} (Harusnya: ${amanMin}) â†’ ${alarmMsg}`);
+          alarms.push(`🚨 ${name}: ${valObj.value} (Harusnya: ${amanMin}) → ${alarmMsg}`);
         }
       }
     }
@@ -144,7 +144,7 @@ function _checkSensorAlarms(ss, config) {
   // 1. Tab Sensor & Alarm kosong (belum dikonfigurasi)
   // 2. SEMUA sensor FRESH (tidak basi) DAN SEMUA dalam batas aman
   //
-  // Jika ada data BASI â†’ status tidak pasti â†’ lemparkan ke mesin VOI untuk memandu petambak!
+  // Jika ada data BASI → status tidak pasti → lemparkan ke mesin VOI untuk memandu petambak!
   const isSafe = (alarms.length === 0 && sensorWarnings.length === 0);
   const isMissingData = (sensorWarnings.length > 0);
   
@@ -223,7 +223,7 @@ function _evaluateRules(ss, rules, config, rawDataCache) {
       value: valObj.value,
       status: status,
       mathStr: mathStr,
-      ageMin: valObj.ageMin || 0,   // â† umur data dalam menit
+      ageMin: valObj.ageMin || 0,   // ← umur data dalam menit
       desc: rule.desc || mathStr
     };
   }
@@ -252,7 +252,7 @@ function _fetchSOPMatrix(ss) {
 }
 
 // =========================================================================
-// ðŸ“– BACA PANDUAN CEK MANUAL DARI SOP TINDAKAN (Kolom I & J)
+// 📖 BACA PANDUAN CEK MANUAL DARI SOP TINDAKAN (Kolom I & J)
 // Layout: | H(pemisah) | I: Nama Parameter | J: Cara Cek Manual |
 // =========================================================================
 function _fetchManualCheckGuide(ss) {
@@ -275,7 +275,7 @@ function _calculateBayesianScore(snapshot, matrixData, config, sopMap) {
   const rows = matrixData.slice(1);
   const falseAlarm = config.false_alarm_rate || 0.05; // P(T=Fail | F=Absent)
   
-  // â”€â”€ Prior: Frekuensi total (identik dgn client) â”€â”€
+  // ── Prior: Frekuensi total (identik dgn client) ──
   let allFreq = [];
   for(let r of rows) {
     if(!r[2] || r[2].toString().toUpperCase().startsWith("COST") || r[2]==="-") continue;
@@ -298,11 +298,11 @@ function _calculateBayesianScore(snapshot, matrixData, config, sopMap) {
     const missedRules      = [];
     const reqMap           = {};
     
-    // â”€â”€ Likelihood Update (identik dgn client runBayesianInference) â”€â”€
+    // ── Likelihood Update (identik dgn client runBayesianInference) ──
     // Untuk setiap parameter di Matrix:
-    //   Matrix val â†’ sensitivity (nullâ†’0.5, 1â†’0.99, 0â†’0.01)
-    //   obs FAIL â†’ LR+ = sens / falseAlarm
-    //   obs PASS â†’ LR- = (1-sens) / (1-falseAlarm)
+    //   Matrix val → sensitivity (null→0.5, 1→0.99, 0→0.01)
+    //   obs FAIL → LR+ = sens / falseAlarm
+    //   obs PASS → LR- = (1-sens) / (1-falseAlarm)
     for(let i=3; i<headers.length; i++) {
        const param = headers[i].toString().trim();
        if(!param) continue;
@@ -334,9 +334,9 @@ function _calculateBayesianScore(snapshot, matrixData, config, sopMap) {
        
        let p_fail_given_absent = falseAlarm;
        
-       // â”€â”€ Observation (IDENTIK dgn client line 1511-1523) â”€â”€
+       // ── Observation (IDENTIK dgn client line 1511-1523) ──
        if(currentVal === "FAIL") {
-         // Client: obs === 0 (FAIL) â†’ num = sens, den = p_fail_given_absent
+         // Client: obs === 0 (FAIL) → num = sens, den = p_fail_given_absent
          let num = sens; // P(Fail | Present) = sens
          let den = p_fail_given_absent;
          if(den === 0) den = 0.001;
@@ -349,7 +349,7 @@ function _calculateBayesianScore(snapshot, matrixData, config, sopMap) {
            mismatchedParams.push(param);
          }
        } else if(currentVal === "PASS") {
-         // Client: obs === 1 (PASS) â†’ num = 1 - sens, den = 1 - p_fail_given_absent
+         // Client: obs === 1 (PASS) → num = 1 - sens, den = 1 - p_fail_given_absent
          let num = 1 - sens; // P(Pass | Present) = 1 - sens
          let den = 1 - p_fail_given_absent;
          if(den === 0) den = 0.001;
@@ -366,7 +366,7 @@ function _calculateBayesianScore(snapshot, matrixData, config, sopMap) {
     
     if(totalCond === 0) continue;
     
-    // â”€â”€ Sigmoid: LogOdds â†’ Probability (identik dgn client) â”€â”€
+    // ── Sigmoid: LogOdds → Probability (identik dgn client) ──
     const prob = 1 / (1 + Math.exp(-logOdds));
     
     const sop = sopMap[diagName] || {level: 'WARNING', tindakan: ['SOP Belum Dibuat']};
@@ -386,7 +386,7 @@ function _calculateBayesianScore(snapshot, matrixData, config, sopMap) {
 
   if(results.length === 0) return [];
 
-  // â”€â”€ TIDAK ada penalti N/A coverage (identik dgn client) â”€â”€
+  // ── TIDAK ada penalti N/A coverage (identik dgn client) ──
   // Client langsung sort tanpa scale-down.
 
   // Sort dari kemungkinan terkuat
@@ -399,21 +399,21 @@ function _calculateBayesianScore(snapshot, matrixData, config, sopMap) {
 // =========================================================================
 //
 // Formula:
-//   VOI(X) = H(D) âˆ’ E[H(D|X)]
+//   VOI(X) = H(D) − E[H(D|X)]
 //
 // Dimana:
 //   H(D) = Entropy distribusi penyakit saat ini (ketidakpastian)
 //   E[H(D|X)] = Expected entropy SETELAH mengukur parameter X
-//             = P(X=PASS) Ã— H(D|X=PASS) + P(X=FAIL) Ã— H(D|X=FAIL)
+//             = P(X=PASS) × H(D|X=PASS) + P(X=FAIL) × H(D|X=FAIL)
 //
 //   Posterior via Bayes:
-//   P(D_i | X=obs) = P(X=obs | D_i) Ã— P(D_i) / P(X=obs)
+//   P(D_i | X=obs) = P(X=obs | D_i) × P(D_i) / P(X=obs)
 //
 // =========================================================================
 function _calculateEntropyVOI(bayesResults, matrixData, missingParams) {
    if(missingParams.length === 0 || bayesResults.length === 0) return [];
    
-   // â”€â”€ 1. Distribusi probabilitas penyakit saat ini â”€â”€
+   // ── 1. Distribusi probabilitas penyakit saat ini ──
    const highProbIllnesses = [];
    for(let i = 0; i < bayesResults.length; i++) {
       const res = bayesResults[i];
@@ -427,13 +427,13 @@ function _calculateEntropyVOI(bayesResults, matrixData, missingParams) {
    const totalScore = highProbIllnesses.reduce((s, r) => s + r.final_score, 0);
    const probs = highProbIllnesses.map(r => r.final_score / totalScore);
    
-   // â”€â”€ 2. Entropy saat ini H(D) â”€â”€
+   // ── 2. Entropy saat ini H(D) ──
    let currentEntropy = 0;
    for(let p of probs) {
       if(p > 0) currentEntropy -= p * (Math.log(p) / Math.log(2));
    }
    
-   // â”€â”€ 3. Baca requirement matrix & cost â”€â”€
+   // ── 3. Baca requirement matrix & cost ──
    const headers = matrixData[0];
    const costMap = {};
    const matrixReqs = {}; // { "D23": { "Low DO": "PASS", "High pH": "FAIL", ... } }
@@ -463,7 +463,7 @@ function _calculateEntropyVOI(bayesResults, matrixData, missingParams) {
       }
    }
    
-   // â”€â”€ 4. Kumpulkan parameter N/A dari 2 sumber â”€â”€
+   // ── 4. Kumpulkan parameter N/A dari 2 sumber ──
    const universalMissingParams = new Set();
    for(let ill of highProbIllnesses) {
       for(let m of ill.missedData) {
@@ -474,16 +474,16 @@ function _calculateEntropyVOI(bayesResults, matrixData, missingParams) {
       universalMissingParams.add(mp);
    }
    
-   // â”€â”€ 5. Hitung TRUE VOI tiap parameter â”€â”€
+   // ── 5. Hitung TRUE VOI tiap parameter ──
    const voiScores = [];
    
    for(let param of universalMissingParams) {
       const cost = costMap[param] || 5;
       
       // Sensitivity per-penyakit:
-      // Jika matrix bilang penyakit D_i expects PASS â†’ P(X=PASS | D_i) = 0.99
-      // Jika matrix bilang penyakit D_i expects FAIL â†’ P(X=PASS | D_i) = 0.01
-      // Jika null (tidak relevan)                    â†’ P(X=PASS | D_i) = 0.50
+      // Jika matrix bilang penyakit D_i expects PASS → P(X=PASS | D_i) = 0.99
+      // Jika matrix bilang penyakit D_i expects FAIL → P(X=PASS | D_i) = 0.01
+      // Jika null (tidak relevan)                    → P(X=PASS | D_i) = 0.50
       const pPassGivenDi = [];
       for(let i = 0; i < highProbIllnesses.length; i++) {
          const ill = highProbIllnesses[i];
@@ -494,7 +494,7 @@ function _calculateEntropyVOI(bayesResults, matrixData, missingParams) {
          else                    pPassGivenDi.push(0.50);
       }
       
-      // P(X=PASS) = Î£ P(D_i) Ã— P(X=PASS | D_i)
+      // P(X=PASS) = Î£ P(D_i) × P(X=PASS | D_i)
       let pObsPass = 0;
       for(let i = 0; i < probs.length; i++) {
          pObsPass += probs[i] * pPassGivenDi[i];
@@ -505,15 +505,15 @@ function _calculateEntropyVOI(bayesResults, matrixData, missingParams) {
       if(pObsPass < 0.001) pObsPass = 0.001;
       if(pObsFail < 0.001) pObsFail = 0.001;
       
-      // Posterior P(D_i | X=PASS) = P(X=PASS | D_i) Ã— P(D_i) / P(X=PASS)
-      // H(D | X=PASS) = -Î£ posterior Ã— log2(posterior)
+      // Posterior P(D_i | X=PASS) = P(X=PASS | D_i) × P(D_i) / P(X=PASS)
+      // H(D | X=PASS) = -Î£ posterior × log2(posterior)
       let entropyIfPass = 0;
       for(let i = 0; i < probs.length; i++) {
          const post = (pPassGivenDi[i] * probs[i]) / pObsPass;
          if(post > 0 && post < 1) entropyIfPass -= post * (Math.log(post) / Math.log(2));
       }
       
-      // Posterior P(D_i | X=FAIL) = P(X=FAIL | D_i) Ã— P(D_i) / P(X=FAIL)
+      // Posterior P(D_i | X=FAIL) = P(X=FAIL | D_i) × P(D_i) / P(X=FAIL)
       let entropyIfFail = 0;
       for(let i = 0; i < probs.length; i++) {
          const pFailGivenDi = 1 - pPassGivenDi[i];
@@ -618,7 +618,7 @@ function _saveDiagnosisHistoryV2(ss, resultObj, snapshot, dataValues) {
       const lastVal = (info.value !== null && info.value !== undefined) ? info.value : '?';
       cellText = `[N/A] ${lastVal} (Basi @${timeTag})`;
     } else {
-      // Ambil mathStr tapi bersihkan: "(Real: 4 > Target: 6)" â†’ "Real: 4 > Target: 6"
+      // Ambil mathStr tapi bersihkan: "(Real: 4 > Target: 6)" → "Real: 4 > Target: 6"
       const detail = info.mathStr ? info.mathStr.replace(/[()]/g, '').trim() : '';
       cellText = `[${status}] ${info.value} ${detail} @${timeTag}`;
     }
@@ -644,7 +644,7 @@ function _saveDiagnosisHistoryV2(ss, resultObj, snapshot, dataValues) {
 }
 
 // =========================================================================
-// ðŸ“Š SIMPAN DECISION TREE & VOI KE TAB "Tree Diagnosis Result"
+// 📊 SIMPAN DECISION TREE & VOI KE TAB "Tree Diagnosis Result"
 // =========================================================================
 function _saveTreeResult(ss, payload, evalResult) {
   const TREE_TAB = "Tree Diagnosis Result";
@@ -693,12 +693,12 @@ function _saveTreeResult(ss, payload, evalResult) {
   const rowColor = payload.status === "NORMAL" ? "#d9ead3" : (topLevel === "CRITICAL" ? "#f4cccc" : "#fce8b2");
   sheet.getRange(rowNum, 1, 1, newRow.length).setBackground(rowColor);
   
-  Logger.log(`[TREE RESULT] Tersimpan baris ${rowNum} â†’ ${topDiag} (${topConf}%) dengan ${depth} Langkah`);
+  Logger.log(`[TREE RESULT] Tersimpan baris ${rowNum} → ${topDiag} (${topConf}%) dengan ${depth} Langkah`);
 
 }
 
 // =========================================================================
-// ðŸ“„ SIMPAN LAPORAN DIAGNOSA TERFORMAT (= Format WhatsApp) ke "Hasil Diagnosa"
+// 📄 SIMPAN LAPORAN DIAGNOSA TERFORMAT (= Format WhatsApp) ke "Hasil Diagnosa"
 // =========================================================================
 function _saveFormattedResult(ss, payload, snapshot, dataValues) {
   const RESULT_TAB = "Hasil Diagnosa";
@@ -734,27 +734,27 @@ function _saveFormattedResult(ss, payload, snapshot, dataValues) {
   const writeSpacer = () => { sheet.getRange(row, 1, 1, 2).merge().setValue(''); row++; };
 
   // ==== JUDUL ====
-  writeMerge(`ðŸŸ BIOFLOK DIAGNOSTIC RESULT â€” ${ts}`, '#0B132B', '#10B981', true);
+  writeMerge(`🐟 BIOFLOK DIAGNOSTIC RESULT — ${ts}`, '#0B132B', '#10B981', true);
   const statusOK = payload.status === 'NORMAL';
   writeMerge(
-    statusOK ? 'âœ…  KONDISI AMAN TERKENDALI (Skenario 7)' : 'ðŸš¨  ANOMALI TERDETEKSI',
+    statusOK ? '✅  KONDISI AMAN TERKENDALI (Skenario 7)' : '🚨  ANOMALI TERDETEKSI',
     statusOK ? '#d9ead3' : '#f4cccc',
     statusOK ? '#274e13' : '#660000', true
   );
   writeSpacer();
 
   // ==== SECTION 1: JALUR DIAGNOSA ====
-  writeHeader('ðŸŒ¿  JALUR DIAGNOSA (Decision Tree)');
+  writeHeader('🌿  JALUR DIAGNOSA (Decision Tree)');
   const treeSteps = payload.decision_tree || [];
   if(treeSteps.length > 0) {
     treeSteps.forEach((step, i) => {
       const isPass = step.toUpperCase().includes('PASS');
       const isFail = step.toUpperCase().includes('FAIL');
-      const resultLabel = isPass ? 'âœ… PASS' : (isFail ? 'âŒ FAIL' : 'â¬œ N/A');
+      const resultLabel = isPass ? '✅ PASS' : (isFail ? '❌ FAIL' : '⬜ N/A');
       const bg = isPass ? '#d9ead3' : (isFail ? '#f4cccc' : '#f3f3f3');
       const fg = isPass ? '#274e13' : (isFail ? '#660000' : '#666666');
-      const stepText = step.replace(/â†’.*PASS/i,'â†’').replace(/â†’.*FAIL/i,'â†’').replace(/â†’.*N\/A/i,'â†’').trim();
-      writeLine(`Step ${i+1} â–º  ${stepText}`, resultLabel, bg, fg);
+      const stepText = step.replace(/→.*PASS/i,'→').replace(/→.*FAIL/i,'→').replace(/→.*N\/A/i,'→').trim();
+      writeLine(`Step ${i+1} ►  ${stepText}`, resultLabel, bg, fg);
     });
   } else {
     writeMerge('(Tidak ada data decision tree)', '#f3f3f3', '#888888');
@@ -762,54 +762,54 @@ function _saveFormattedResult(ss, payload, snapshot, dataValues) {
   writeSpacer();
 
   // ==== SECTION 2: PROBABILITAS BAYES ====
-  writeHeader('ðŸ§®  PROBABILITAS KECOCOKAN (Bayesian)');
+  writeHeader('🧮  PROBABILITAS KECOCOKAN (Bayesian)');
   const ranking = payload.bayesian_ranking || [];
   if(!statusOK && ranking.length > 0) {
     ranking.forEach((b, i) => {
       const conf = b.confidence || 0;
       const filled = Math.round(conf / 10);
-      const bar = 'â–ˆ'.repeat(filled) + 'â–‘'.repeat(10 - filled);
+      const bar = '█'.repeat(filled) + '░'.repeat(10 - filled);
       const bgCard = i === 0 ? '#c9daf8' : (i === 1 ? '#d9ead3' : '#f8f9fa');
-      const badge = i === 0 ? ' â† TOP' : '';
+      const badge = i === 0 ? ' ← TOP' : '';
       writeMerge(`${i+1}. ${b.diagnosis.toUpperCase()}${badge}`, bgCard, '#000000', true);
       sheet.getRange(row-1, 2).setValue(`${bar} ${conf}%`).setFontWeight('bold').setFontFamily('Courier New').setBackground(bgCard);
       const allParams = Object.keys(snapshot || {});
       const missedSet = new Set(b.missed_rules || []);
       const matchedList = allParams.filter(k => !missedSet.has(k) && snapshot[k] !== undefined).join(', ') || '-';
       const missedList = (b.missed_rules || []).join(', ') || '-';
-      writeLine('   ðŸŸ¢ Data Tersedia (MATCH):', matchedList, '#e6f4ea', '#274e13');
-      writeLine('   ðŸ”´ Data Kosong / N/A:', missedList, '#fce8e6', '#7f0000');
+      writeLine('   🟢 Data Tersedia (MATCH):', matchedList, '#e6f4ea', '#274e13');
+      writeLine('   🔴 Data Kosong / N/A:', missedList, '#fce8e6', '#7f0000');
       writeSpacer();
     });
   } else if(statusOK) {
-    writeMerge('âœ… Tidak ada penyakit yang terdeteksi.', '#d9ead3', '#274e13');
+    writeMerge('✅ Tidak ada penyakit yang terdeteksi.', '#d9ead3', '#274e13');
     writeSpacer();
   } else {
-    writeMerge('(Tidak ada data Bayesian â€” pastikan Matrix Diagnosis sudah terisi)', '#f3f3f3', '#888888');
+    writeMerge('(Tidak ada data Bayesian — pastikan Matrix Diagnosis sudah terisi)', '#f3f3f3', '#888888');
     writeSpacer();
   }
 
 
   // ==== SECTION 3: KESIMPULAN FINAL ====
-  writeHeader('ðŸŽ¯  KESIMPULAN FINAL');
+  writeHeader('🎯  KESIMPULAN FINAL');
   if(statusOK) {
-    writeMerge('Semua sensor dalam batas aman.\nðŸ‘‰ Tambak terkendali. Lanjutkan monitoring.', '#d9ead3', '#274e13', true);
+    writeMerge('Semua sensor dalam batas aman.\n👉 Tambak terkendali. Lanjutkan monitoring.', '#d9ead3', '#274e13', true);
   } else if(ranking.length > 0) {
     const top = ranking[0];
     writeMerge(
-      `Kedua engine (Tree & Bayes) sepakat menunjuk:\nðŸ‘‰ ${top.diagnosis.toUpperCase()}  (${top.confidence}%)`,
+      `Kedua engine (Tree & Bayes) sepakat menunjuk:\n👉 ${top.diagnosis.toUpperCase()}  (${top.confidence}%)`,
       '#c9daf8', '#1a237e', true
     );
     writeSpacer();
 
     // ==== SECTION 4: TINDAKAN DARURAT ====
-    writeHeader('ðŸ“‹  TINDAKAN DARURAT');
+    writeHeader('📋  TINDAKAN DARURAT');
     const levelBg = (top.level||'').toUpperCase() === 'CRITICAL' ? '#f4cccc' : '#fce8b2';
     const levelFg = (top.level||'').toUpperCase() === 'CRITICAL' ? '#660000' : '#7f4c00';
-    writeMerge(`âš¡ Level: ${top.level || 'WARNING'} (respons secepatnya!)`, levelBg, levelFg, true);
+    writeMerge(`⚡ Level: ${top.level || 'WARNING'} (respons secepatnya!)`, levelBg, levelFg, true);
     if(top.sop && top.sop.length > 0) {
       top.sop.forEach((s, i) => {
-        writeMerge(`${i+1}. ðŸ”¹ ${s}`, i%2===0 ? '#fff3e0' : '#fffde7', '#000000');
+        writeMerge(`${i+1}. 🔹 ${s}`, i%2===0 ? '#fff3e0' : '#fffde7', '#000000');
       });
     } else {
       writeMerge('(SOP belum diisi di tab SOP Tindakan)', '#f3f3f3', '#888888');
@@ -818,7 +818,7 @@ function _saveFormattedResult(ss, payload, snapshot, dataValues) {
 
     // ==== SECTION 5: SENSOR WARNINGS ====
     if((payload.sensor_warnings||[]).length > 0) {
-      writeHeader('âš ï¸  SENSOR MATI / DATA BASI');
+      writeHeader('⚠️  SENSOR MATI / DATA BASI');
       (payload.sensor_warnings||[]).forEach(w => writeMerge(w, '#fff2cc', '#7f4c00'));
       writeSpacer();
     }
@@ -826,10 +826,10 @@ function _saveFormattedResult(ss, payload, snapshot, dataValues) {
     // ==== SECTION 6: VOI ====
     const voi = payload.voi_recommendation || [];
     if(voi.length > 0) {
-      writeHeader('ðŸ”¬  REKOMENDASI TES BERIKUTNYA (Value of Information)');
+      writeHeader('🔬  REKOMENDASI TES BERIKUTNYA (Value of Information)');
       voi.forEach(v => {
         writeMerge(
-          `#${v.priority_rank} â†’ Ukur ${v.parameter}  (Dampak: ${v.urgency_impact}%, Gain: ${v.information_gain_score})`,
+          `#${v.priority_rank} → Ukur ${v.parameter}  (Dampak: ${v.urgency_impact}%, Gain: ${v.information_gain_score})`,
           v.priority_rank === 1 ? '#e8d5f5' : '#f5e8ff', '#37006e'
         );
       });
@@ -838,20 +838,20 @@ function _saveFormattedResult(ss, payload, snapshot, dataValues) {
   }
 
   // Footer
-  writeMerge(`Ketik *jelaskan* â†’ analisa AI lebih lanjut\nKetik *tes berikutnya* â†’ cek sensor mana yang perlu diukur`, '#efefef', '#666666');
+  writeMerge(`Ketik *jelaskan* → analisa AI lebih lanjut\nKetik *tes berikutnya* → cek sensor mana yang perlu diukur`, '#efefef', '#666666');
 
   Logger.log(`[FORMATTED RESULT] Tab "${RESULT_TAB}" selesai diperbarui.`);
 }
 
 // =========================================================================
-// ðŸš€ THE MASTER TRIGGER: EXECUTE ALL PILLARS 
+// 🚀 THE MASTER TRIGGER: EXECUTE ALL PILLARS 
 // =========================================================================
 function runCombinedDiagnosis(calledViaScript = false) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const config = _getConfig(ss);
   
   Logger.log("================= DIAGNOSIS STARTED =================");
-  Logger.log("âœ… Starting Pintu 1: Sensor & Alarm Checks");
+  Logger.log("✅ Starting Pintu 1: Sensor & Alarm Checks");
   const alarmCheck = _checkSensorAlarms(ss, config);
   const rawDataCache = alarmCheck.rawDataCache; // Re-use fetched values
   
@@ -894,9 +894,14 @@ function runCombinedDiagnosis(calledViaScript = false) {
        Logger.log("Sistem OFFLINE: Semua data basi / kosong. Tetap mengurutkan prior-based VOI.");
    }
   
-  Logger.log(`âš ï¸ Anomali terdeteksi! Tembok Pintu 1 Jebol (${alarmCheck.alarms.length} Alarms). Memasuki Mesin Tree & Bayes (Pintu 2)...`);
+  Logger.log(`⚠️ Anomali terdeteksi! Tembok Pintu 1 Jebol (${alarmCheck.alarms.length} Alarms). Memasuki Mesin Tree & Bayes (Pintu 2)...`);
   
-  const matrixData = ss.getSheetByName("Matrix Diagnosis").getDataRange().getValues();
+  const matrixSheet = ss.getSheetByName("Matrix Diagnosis");
+  if (!matrixSheet) {
+    Logger.log("Error: Tab Matrix Diagnosis tidak ditemukan!");
+    return { status: "error", message: "Tab Matrix Diagnosis hilang." };
+  }
+  const matrixData = matrixSheet.getDataRange().getValues();
   const sopMap = _fetchSOPMatrix(ss);
   
   // Pilar 2: Hitung Persentase Probabilitas Matematis
@@ -939,15 +944,15 @@ function runCombinedDiagnosis(calledViaScript = false) {
              confidence: parseFloat(b.final_score.toFixed(1)),
              level: b.level,
              sop: b.sopList,
-             matched_params: b.matchedParams || [],    // ðŸ”¥ Benar-benar COCOK dgn matrix
-             mismatched_params: b.mismatchedParams || [], // âŒ Data ada tapi BEDA dgn matrix
-             missed_rules: b.missedData || [],         // âšª Data Kosong / N/A
-             req_map: b.reqMap || {}                   // ðŸ“‹ Parameter requirement definitions
+             matched_params: b.matchedParams || [],    // 🔥 Benar-benar COCOK dgn matrix
+             mismatched_params: b.mismatchedParams || [], // ❌ Data ada tapi BEDA dgn matrix
+             missed_rules: b.missedData || [],         // ⚪ Data Kosong / N/A
+             req_map: b.reqMap || {}                   // 📋 Parameter requirement definitions
          };
      }),
 
-     // â”€â”€ VOI: Deduplikasi berdasarkan Keyword â”€â”€
-     // "Low pH" dan "High pH" â†’ sama-sama keyword "pH", cukup tampil 1x "Ukur pH"
+     // ── VOI: Deduplikasi berdasarkan Keyword ──
+     // "Low pH" dan "High pH" → sama-sama keyword "pH", cukup tampil 1x "Ukur pH"
      voi_recommendation: (function() {
          const grouped = {};
          voiPriorities.forEach(function(v) {
@@ -999,7 +1004,7 @@ function runCombinedDiagnosis(calledViaScript = false) {
            payload: JSON.stringify(payload)
         });
       } catch(e) {
-        Logger.log("âŒ Gagal mengirim webhook ke Python: " + e.message);
+        Logger.log("❌ Gagal mengirim webhook ke Python: " + e.message);
       }
   }
   
@@ -1016,22 +1021,10 @@ function MUNCUL_CRONJOB_30_MENIT() {
    runCombinedDiagnosis(true);
 }
 
-// -------------------------------------------------------------
-// ENDPOINT UNTUK HTTP GET / POST (Dipanggil dari PYTHON Chatbot)
-// Mengembalikan data mentah berbentuk string JSON
-// -------------------------------------------------------------
-function doGet(e) {
-  const result = runCombinedDiagnosis(false); // False krn python sedang memanggil, tak perlu tembak balik webhook
-  return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
-}
-
-function doPost(e) {
-  const result = runCombinedDiagnosis(false);
-  return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
-}
+// ENDPOINT SUDAH DIPINDAHKAN KE API_Endpoint.gs
 
 /**
- * ðŸŽ¨ Dipanggil terpisah dari HTML Menu "Lihat Peta Pohon Keputusan"
+ * 🎨 Dipanggil terpisah dari HTML Menu "Lihat Peta Pohon Keputusan"
  */
 function getMermaidTreeData() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -1053,7 +1046,7 @@ function getMermaidTreeData() {
 }
 
 /**
- * ðŸŽ¨ Mentransmisikan Data Mentah Spreadsheet ke UI HTML/CSS Klien Custom
+ * 🎨 Mentransmisikan Data Mentah Spreadsheet ke UI HTML/CSS Klien Custom
  */
 function getVisualTreeDataJSON() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();

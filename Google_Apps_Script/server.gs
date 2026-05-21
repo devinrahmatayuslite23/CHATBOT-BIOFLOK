@@ -1,7 +1,7 @@
-var NGROK_URL = "https://ginny-accomplished-sarina.ngrok-free.dev"; 
-
 function sendWebhook(endpoint, payload) {
-  var url = NGROK_URL + endpoint;
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const config = _getConfig(ss);
+  var url = (config.python_webhook_url || "") + endpoint;
   try {
     var options = {
       'method' : 'post',
@@ -39,8 +39,8 @@ function notifyBot(e) {
      // 🚀 JALANKAN DIAGNOSIS OFFLINE DI GOOGLE SHEETS DULU (Bypass Python)
      try {
        // Cek apakah tabel/engine sudah diload
-       if (typeof runAutoDiagnosis === 'function') {
-         var result = runAutoDiagnosis();
+       if (typeof runCombinedDiagnosis === 'function') {
+         var result = runCombinedDiagnosis(false);
          if (result && result.topDiag) {
             // Tulis hasil diagnosa ke sheet jika diperlukan (Optional untuk nanti)
             Logger.log("✅ Auto Diagnosa GAS Selesai.");
@@ -61,10 +61,10 @@ function notifyBot(e) {
      
      // 🚀 JALANKAN DIAGNOSIS OFFLINE DI GOOGLE SHEETS DULU
      try {
-       if (typeof runAutoDiagnosis === 'function') {
-         runAutoDiagnosis();
+       if (typeof runCombinedDiagnosis === 'function') {
+         runCombinedDiagnosis(false);
        }
-     } catch (err) {}
+     } catch (err) { Logger.log("Error fallback: " + err); }
      
      sendWebhook("/webhook/sensor-update", {"sheet": "Unknown-Force-Check"});
   }

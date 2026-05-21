@@ -1,0 +1,1770 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Diagnostic Tree & Bayesian Optimizer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            slate: { 850: '#1e293b' }
+          }
+        }
+      }
+    }
+  </script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      transition: background-color 0.3s, color 0.3s;
+    }
+
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+
+    .dark ::-webkit-scrollbar-thumb {
+      background: #475569;
+    }
+
+    .dark ::-webkit-scrollbar-thumb:hover {
+      background: #64748b;
+    }
+
+    .card {
+      border-radius: 12px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+    }
+
+    /* Tree Container */
+    .tree-viewport {
+      width: 100%;
+      height: 750px;
+      overflow: hidden;
+      position: relative;
+      border-bottom: 1px solid #e2e8f0;
+      cursor: grab;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      transition: height 0.1s ease, background-color 0.3s;
+    }
+
+    .dark .tree-viewport {
+      border-bottom-color: #334155;
+    }
+
+    .tree-viewport:active {
+      cursor: grabbing;
+    }
+
+    .resize-handle {
+      width: 100%;
+      height: 12px;
+      background-color: #e2e8f0;
+      cursor: ns-resize;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      border-top: 1px solid #cbd5e1;
+      border-bottom: 1px solid #cbd5e1;
+      transition: background-color 0.2s;
+    }
+
+    .dark .resize-handle {
+      background-color: #334155;
+      border-color: #475569;
+    }
+
+    .resize-handle:hover {
+      background-color: #cbd5e1;
+    }
+
+    .resize-handle::after {
+      content: '•••';
+      color: #64748b;
+      font-size: 10px;
+      letter-spacing: 2px;
+      margin-top: -4px;
+    }
+
+    /* Tree Elements */
+    .tree-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px;
+      transform-origin: 0 0;
+      width: max-content;
+      min-width: 100%;
+      transition: transform 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+
+    .node {
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      background-color: #67e8f9;
+      border: 2px solid #000;
+      color: #000;
+      font-weight: 700;
+      font-family: monospace;
+      z-index: 20;
+      position: relative;
+      box-shadow: 4px 4px 0px rgba(0, 0, 0, 0.1);
+      text-align: center;
+      padding: 4px;
+      min-width: 70px;
+      min-height: 40px;
+      transition: all 0.3s;
+    }
+
+    .dark .node {
+      box-shadow: 4px 4px 0px rgba(0, 0, 0, 0.5);
+    }
+
+    .leaf {
+      display: inline-flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 12px 18px;
+      background-color: #fef08a;
+      border: 2px solid #000;
+      border-radius: 8px;
+      color: #000;
+      font-weight: 600;
+      min-width: 180px;
+      min-height: 90px;
+      z-index: 20;
+      position: relative;
+      box-shadow: 2px 2px 0px rgba(0, 0, 0, 0.1);
+      text-align: center;
+      white-space: pre-wrap;
+      max-width: 240px;
+      line-height: 1.2;
+      overflow: hidden;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+
+    .leaf:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 10px rgba(0, 0, 0, 0.15);
+    }
+
+    .dark .leaf {
+      box-shadow: 2px 2px 0px rgba(0, 0, 0, 0.5);
+    }
+
+    .leaf.active-node {
+      border-color: #f97316;
+      box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.4), 0 10px 20px rgba(0, 0, 0, 0.25);
+      background-color: #fff7ed;
+      transform: scale(1.05);
+      z-index: 40;
+    }
+
+    .confidence-box {
+      margin-top: 8px;
+      background-color: white;
+      border: 1px solid #eab308;
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 0.75em;
+      color: #854d0e;
+      font-weight: 700;
+      box-shadow: 0 1px 1px rgba(0, 0, 0, 0.05);
+      width: 80%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+    }
+
+    .branches {
+      display: flex;
+      justify-content: center;
+      padding-top: 30px;
+      position: relative;
+    }
+
+    .branches::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 2px;
+      height: 30px;
+      background-color: #000;
+      transition: background-color 0.3s;
+      z-index: 10;
+    }
+
+    .dark .branches::before {
+      background-color: #64748b;
+    }
+
+    .branch {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: relative;
+      padding: 0 15px;
+      padding-top: 30px;
+    }
+
+    .branch::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 2px;
+      background-color: #000;
+      transition: background-color 0.3s;
+      z-index: 10;
+    }
+
+    .branch::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 2px;
+      height: 30px;
+      background-color: #000;
+      transition: background-color 0.3s;
+      z-index: 10;
+    }
+
+    .dark .branch::before,
+    .dark .branch::after {
+      background-color: #64748b;
+    }
+
+    .branch:first-child::before {
+      left: 50%;
+      width: 50%;
+    }
+
+    .branch:last-child::before {
+      right: 50%;
+      width: 50%;
+      left: auto;
+    }
+
+    .branch:only-child::before {
+      display: none;
+    }
+
+    .branch:only-child {
+      padding-top: 0;
+    }
+
+    .branch>.label {
+      position: absolute;
+      top: -14px;
+      padding: 4px 8px;
+      font-size: 0.75rem;
+      font-weight: 800;
+      color: #fff;
+      text-transform: uppercase;
+      border-radius: 4px;
+      z-index: 25;
+      white-space: nowrap;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+      transition: all 0.3s;
+    }
+
+    .label-pass {
+      background-color: #16a34a;
+      border: 2px solid #14532d;
+    }
+
+    .label-fail {
+      background-color: #dc2626;
+      border: 2px solid #7f1d1d;
+    }
+
+    /* BAYESIAN DASHBOARD STYLES */
+    .bayes-dashboard {
+      width: 100%;
+      height: 100%;
+      padding: 20px;
+      overflow-y: auto;
+      display: none;
+    }
+
+    .bayes-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      height: 100%;
+    }
+
+    .bayes-col {
+      background: rgba(255, 255, 255, 0.5);
+      border-radius: 8px;
+      padding: 15px;
+      border: 1px solid #e2e8f0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .dark .bayes-col {
+      background: rgba(30, 41, 59, 0.5);
+      border-color: #334155;
+    }
+
+    .obs-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px;
+      border-bottom: 1px solid #f1f5f9;
+    }
+
+    .dark .obs-row {
+      border-color: #334155;
+    }
+
+    .obs-btn {
+      width: 30px;
+      height: 30px;
+      border-radius: 4px;
+      border: 2px solid #cbd5e1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: #94a3b8;
+      font-weight: bold;
+      transition: all 0.2s;
+    }
+
+    .obs-btn:hover {
+      background-color: #f8fafc;
+    }
+
+    .obs-btn.active-pass {
+      background-color: #16a34a;
+      border-color: #14532d;
+      color: white;
+    }
+
+    .obs-btn.active-fail {
+      background-color: #dc2626;
+      border-color: #7f1d1d;
+      color: white;
+    }
+
+    .comp-row {
+      margin-bottom: 12px;
+    }
+
+    .comp-bar-bg {
+      width: 100%;
+      height: 24px;
+      background-color: #e2e8f0;
+      border-radius: 4px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .dark .comp-bar-bg {
+      background-color: #334155;
+    }
+
+    .comp-bar-fill {
+      height: 100%;
+      background-color: #3b82f6;
+      transition: width 0.5s ease-out, background-color 0.5s;
+    }
+
+    .comp-val {
+      position: absolute;
+      right: 5px;
+      top: 0;
+      line-height: 24px;
+      font-size: 0.75rem;
+      font-weight: bold;
+      color: #475569;
+    }
+
+    .dark .comp-val {
+      color: #cbd5e1;
+    }
+
+    /* ANALYSIS PANEL */
+    #pathAnalysisPanel {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      max-height: 45%;
+      background-color: rgba(255, 255, 255, 0.98);
+      border-top: 1px solid #e2e8f0;
+      box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.1);
+      transform: translateY(100%);
+      transition: transform 0.3s ease-out;
+      z-index: 50;
+      overflow-y: auto;
+    }
+
+    .dark #pathAnalysisPanel {
+      background-color: rgba(15, 23, 42, 0.98);
+      border-top-color: #334155;
+    }
+
+    #pathAnalysisPanel.open {
+      transform: translateY(0);
+    }
+
+    /* Other Styles */
+    textarea.sheet-input {
+      width: 100%;
+      height: 100%;
+      text-align: center;
+      background: transparent;
+      font-weight: 600;
+      font-size: 0.85rem;
+      cursor: default;
+      outline: none;
+      border: 2px solid transparent;
+      transition: all 0.1s;
+      min-height: 40px;
+      overflow-y: hidden;
+      resize: none;
+      white-space: pre-wrap;
+      line-height: 1.3;
+      padding-top: 10px;
+    }
+
+    input.sheet-input {
+      width: 100%;
+      height: 100%;
+      text-align: center;
+      font-weight: 600;
+      font-size: 0.85rem;
+      cursor: pointer;
+      outline: none;
+      border: none;
+      transition: all 0.1s;
+      display: block;
+    }
+
+    textarea.sheet-input:focus,
+    input.sheet-input:focus {
+      background-color: white;
+      outline: 2px solid #3b82f6;
+      z-index: 10;
+    }
+
+    .dark textarea.sheet-input:focus,
+    .dark input.sheet-input:focus {
+      background-color: #1e293b;
+      outline: 2px solid #60a5fa;
+    }
+
+    textarea.header-input {
+      width: 100%;
+      background: transparent;
+      text-align: center;
+      font-weight: 700;
+      color: #374151;
+      resize: none;
+      min-height: 28px;
+      white-space: pre-wrap;
+      line-height: 1.2;
+      overflow-y: hidden;
+      padding: 4px;
+      outline: none;
+    }
+
+    .dark textarea.header-input {
+      color: #e2e8f0;
+    }
+
+    textarea.header-input:focus {
+      background-color: white;
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+    }
+
+    .dark textarea.header-input:focus {
+      background-color: #1e293b;
+    }
+
+    .val-pass {
+      color: #047857;
+      background-color: #ecfdf5;
+    }
+
+    .val-fail {
+      color: #b91c1c;
+      background-color: #fef2f2;
+    }
+
+    .val-null {
+      color: #94a3b8;
+      background-color: transparent;
+    }
+
+    .dark .val-pass {
+      color: #6ee7b7;
+      background-color: #064e3b;
+    }
+
+    .dark .val-fail {
+      color: #fca5a5;
+      background-color: #7f1d1d;
+    }
+
+    .dark .val-null {
+      color: #64748b;
+    }
+
+    input.cost-input {
+      width: 100%;
+      font-size: 0.75rem;
+      color: #64748b;
+      text-align: center;
+      background: #f1f5f9;
+      border-radius: 4px;
+      margin-top: 2px;
+    }
+
+    .dark input.cost-input {
+      background: #334155;
+      color: #cbd5e1;
+    }
+
+    .header-pair-active {
+      background-color: #fef9c3 !important;
+      border-bottom: 2px solid #eab308 !important;
+    }
+
+    .dark .header-pair-active {
+      background-color: #854d0e !important;
+      border-bottom: 2px solid #facc15 !important;
+      color: white !important;
+    }
+
+    .sticky-col {
+      position: sticky;
+      z-index: 20;
+      background-color: inherit;
+    }
+
+    th.sticky-col {
+      z-index: 30;
+    }
+
+    .col-idx {
+      left: 0;
+      width: 40px;
+      border-right: 1px solid #e2e8f0;
+    }
+
+    .col-freq {
+      left: 40px;
+      width: 60px;
+      border-right: 1px solid #e2e8f0;
+    }
+
+    .col-diag {
+      left: 100px;
+      width: 200px;
+      border-right: 2px solid #cbd5e1;
+      box-shadow: 2px 0 5px -2px rgba(0, 0, 0, 0.1);
+    }
+
+    .dark .col-idx,
+    .dark .col-freq {
+      border-right-color: #334155;
+    }
+
+    .dark .col-diag {
+      border-right-color: #475569;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .analysis-table td,
+    .analysis-table th {
+      padding: 6px 8px;
+      font-size: 0.75rem;
+    }
+
+    .top-diag-row {
+      background-color: #e0f2fe !important;
+      color: #0369a1 !important;
+      border-bottom: 1px solid #bae6fd;
+    }
+
+    .dark .top-diag-row {
+      background-color: #0c4a6e !important;
+      color: #e0f2fe !important;
+      border-bottom: 1px solid #075985;
+    }
+
+    .metric-card {
+      background: white;
+      border-radius: 8px;
+      padding: 16px;
+      border: 1px solid #e2e8f0;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      height: 100%;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .dark .metric-card {
+      background: #1e293b;
+      border-color: #334155;
+    }
+
+    .metric-card.accent-blue {
+      border-top: 4px solid #3b82f6;
+    }
+
+    .metric-card.accent-green {
+      border-top: 4px solid #22c55e;
+    }
+
+    .metric-card.accent-purple {
+      border-top: 4px solid #a855f7;
+    }
+
+    .metric-card.accent-orange {
+      border-top: 4px solid #f97316;
+    }
+
+    .metric-label {
+      font-size: 0.7rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      color: #64748b;
+      letter-spacing: 0.05em;
+      margin-bottom: 4px;
+    }
+
+    .dark .metric-label {
+      color: #94a3b8;
+    }
+
+    .metric-value {
+      font-size: 1.5rem;
+      font-weight: 800;
+      color: #1e293b;
+      line-height: 1.2;
+    }
+
+    .dark .metric-value {
+      color: #f1f5f9;
+    }
+
+    .metric-sub {
+      font-size: 0.75rem;
+      color: #94a3b8;
+      margin-top: 4px;
+    }
+
+    .metric-icon {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      font-size: 1.2rem;
+      opacity: 0.1;
+      color: black;
+    }
+
+    .dark .metric-icon {
+      color: white;
+      opacity: 0.05;
+    }
+
+    .export-mode {
+      background-color: white !important;
+      color: black !important;
+      width: fit-content !important;
+      min-width: 100% !important;
+      max-width: none !important;
+      margin: 0 !important;
+      overflow: visible !important;
+      position: absolute !important;
+      top: 0;
+      left: 0;
+    }
+
+    .export-mode * {
+      color: black;
+      border-color: #e2e8f0;
+    }
+
+    .export-mode .tree-viewport {
+      background-color: white !important;
+      border-bottom: 1px solid #ccc !important;
+    }
+
+    .export-mode .metric-card {
+      background-color: white !important;
+      border: 1px solid #ccc !important;
+    }
+
+    .export-mode .no-print {
+      display: none !important;
+    }
+
+    .export-mode .node,
+    .export-mode .leaf,
+    .export-mode .branch>.label,
+    .export-mode .confidence-box {
+      box-shadow: none !important;
+      border: 1px solid #000 !important;
+    }
+
+    .export-mode .tree-viewport {
+      height: auto !important;
+      min-height: 400px;
+      overflow: visible !important;
+      border: none;
+      display: block !important;
+    }
+
+    .export-mode .tree-content {
+      transform: none !important;
+      position: static !important;
+      width: fit-content !important;
+      margin: 0 auto;
+      margin-bottom: 40px;
+    }
+
+    .export-mode .card,
+    .export-mode #matrixScrollArea,
+    .export-mode #calculationLogContainer {
+      height: auto !important;
+      max-height: none !important;
+      overflow: visible !important;
+      box-shadow: none !important;
+      border: 1px solid #e2e8f0;
+    }
+
+    .export-mode .sticky-col,
+    .export-mode th,
+    .export-mode thead {
+      position: static !important;
+      z-index: auto !important;
+    }
+
+    .export-cell-div {
+      white-space: pre-wrap;
+      word-break: break-word;
+      overflow: visible;
+      height: auto;
+      min-height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      width: 100%;
+      padding: 2px;
+    }
+
+    .export-cell-div.align-left {
+      justify-content: flex-start;
+      text-align: left;
+    }
+  </style>
+</head>
+
+<body id="fullReportBody" class="bg-slate-50 dark:bg-slate-900 dark:text-slate-200">
+
+  <input type="file" id="csvUploadInput" accept=".csv" class="hidden" onchange="handleFileUpload(this)">
+
+  <div class="container mx-auto p-4 md:p-6 max-w-full">
+
+    <!-- HEADER -->
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 no-print">
+      <div>
+        <h1 class="text-3xl font-bold text-slate-800 dark:text-white">Diagnostic Optimizer</h1>
+        <p class="text-sm text-slate-500 dark:text-slate-400">
+          <span id="modeDescText">Spreadsheet Mode: '1' for Pass, '2' for Fail.</span>
+        </p>
+      </div>
+      <div class="flex gap-2">
+        <button onclick="toggleDarkMode()"
+          class="px-3 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded shadow-sm hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors"
+          title="Toggle Dark Mode">
+          <i class="fas fa-moon dark:hidden"></i>
+          <i class="fas fa-sun hidden dark:inline text-yellow-300"></i>
+        </button>
+        <button onclick="downloadReportPDF()"
+          class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded shadow-sm text-sm font-bold flex items-center gap-2">
+          <i class="fas fa-file-pdf"></i> Full Report
+        </button>
+        <button onclick="resetToPaperData()"
+          class="px-4 py-2 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded shadow-sm hover:bg-gray-50 dark:hover:bg-slate-700 text-sm font-medium">
+          <i class="fas fa-undo mr-2"></i>Reset
+        </button>
+      </div>
+    </div>
+
+    <!-- PRINT ONLY HEADER -->
+    <div id="printHeader" class="hidden mb-4 p-4 border-b">
+      <h1 class="text-3xl font-bold text-gray-800">Diagnostic Analysis Report</h1>
+      <p class="text-sm text-gray-500">Generated on <span id="printDate"></span></p>
+    </div>
+
+    <!-- WRAPPER -->
+    <div id="combinedExportTarget"
+      class="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 overflow-hidden mb-8">
+
+      <!-- Toolbar -->
+      <div
+        class="relative bg-slate-50 dark:bg-slate-850 border-b border-gray-100 dark:border-slate-700 p-2 flex flex-wrap justify-between items-center z-30 gap-2 no-print">
+        <div class="flex items-center gap-2 pl-2 overflow-x-auto pb-1 md:pb-0">
+          <h2 class="font-bold text-gray-800 dark:text-white flex items-center gap-2 mr-4 whitespace-nowrap">
+            <i class="fas fa-sitemap mr-1 text-cyan-600"></i>Model
+          </h2>
+
+          <!-- MAIN MODE TOGGLE -->
+          <div class="flex bg-slate-200 dark:bg-slate-700 rounded p-1 mr-4">
+            <button id="btnModeTree" onclick="setMainMode('tree')"
+              class="px-3 py-1 rounded text-xs font-bold transition-all bg-white dark:bg-slate-600 shadow text-blue-600 dark:text-blue-300">Tree
+              (Sequential)</button>
+            <button id="btnModeBayes" onclick="setMainMode('bayes')"
+              class="px-3 py-1 rounded text-xs font-bold transition-all text-slate-500 dark:text-slate-400 hover:text-slate-700">Bayes
+              (Parallel)</button>
+          </div>
+
+          <!-- TREE CONTROLS -->
+          <div id="treeControls" class="flex items-center gap-2 border-l border-gray-300 dark:border-slate-600 pl-4">
+            <button onclick="autoTune('coverage')"
+              class="px-2 py-1 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-400 text-xs font-bold rounded hover:bg-green-100 dark:hover:bg-green-900/50 flex items-center gap-1 whitespace-nowrap">
+              <i class="fas fa-magic"></i> Max Coverage
+            </button>
+            <!-- ALGORITHM SELECTOR -->
+            <div class="flex flex-col pl-2">
+              <label for="algoSelect"
+                class="text-[9px] text-gray-400 dark:text-slate-500 font-bold uppercase mb-0.5">Split Algo</label>
+              <div class="relative">
+                <select id="algoSelect" onchange="toggleCalculation()"
+                  class="appearance-none bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-xs rounded px-2 py-1 pr-6 font-bold cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <option value="eff" selected>Efficiency (Gain²/Cost)</option>
+                  <option value="voi">VOI (Gain/Cost)</option>
+                  <option value="id3">ID3 (Raw Gain)</option>
+                </select>
+                <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
+                  <i class="fas fa-chevron-down text-[10px]"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- BAYES CONTROLS -->
+          <div id="bayesControls"
+            class="hidden flex items-center gap-2 border-l border-gray-300 dark:border-slate-600 pl-4">
+            <div class="flex flex-col w-32">
+              <label class="text-[9px] text-gray-400 dark:text-slate-500 font-bold uppercase">False Alarm Rate</label>
+              <input type="number" id="bayesFalseAlarm" value="0.05" step="0.01" min="0" max="0.5"
+                class="text-xs bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded px-2 py-1 w-full"
+                onchange="runBayesianInference()">
+            </div>
+            <div class="text-[10px] text-orange-500 font-bold px-2 max-w-[200px] leading-tight">
+              <i class="fas fa-info-circle mr-1"></i>Multiple Faults Supported via Independent Updates.
+            </div>
+          </div>
+
+        </div>
+
+        <div class="flex items-center gap-2 ml-auto">
+          <div id="zoomControls"
+            class="flex items-center bg-white dark:bg-slate-700 rounded border border-gray-300 dark:border-slate-600 mr-2">
+            <button onclick="zoomTree(-0.1)"
+              class="px-3 py-1 hover:bg-gray-50 dark:hover:bg-slate-600 border-r border-gray-200 dark:border-slate-600 text-gray-600 dark:text-slate-300 font-bold">-</button>
+            <span id="zoomLevelDisplay"
+              class="px-2 text-xs font-mono text-gray-500 dark:text-slate-400 w-12 text-center">100%</span>
+            <button onclick="zoomTree(0.1)"
+              class="px-3 py-1 hover:bg-gray-50 dark:hover:bg-slate-600 border-l border-gray-200 dark:border-slate-600 text-gray-600 dark:text-slate-300 font-bold">+</button>
+            <button onclick="fitTreeToScreen()"
+              class="px-2 py-1 hover:bg-gray-50 dark:hover:bg-slate-600 border-l border-gray-200 dark:border-slate-600 text-gray-600 dark:text-slate-300 text-xs"
+              title="Fit to Screen"><i class="fas fa-compress"></i></button>
+          </div>
+          <button onclick="downloadCombinedPDF()"
+            class="px-3 py-1 bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-600 text-gray-700 dark:text-slate-300 text-xs font-bold rounded shadow-sm flex items-center gap-2"
+            title="Export Tree + Metrics">
+            <i class="fas fa-file-pdf text-red-500"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- VIEWPORT AREA -->
+      <div id="treeViewport" class="tree-viewport bg-slate-50 dark:bg-slate-900" onmousedown="startDrag(event)">
+
+        <!-- MODE 1: TREE -->
+        <div id="treeContent" class="tree-content">
+          <!-- Tree renders here -->
+        </div>
+
+        <!-- MODE 2: BAYESIAN DASHBOARD -->
+        <div id="bayesDashboard" class="bayes-dashboard">
+          <div class="bayes-grid">
+            <div class="bayes-col">
+              <h3
+                class="font-bold text-slate-700 dark:text-slate-200 mb-4 border-b pb-2 border-slate-200 dark:border-slate-600 flex justify-between">
+                <span><i class="fas fa-eye text-blue-500 mr-2"></i>Observation Nodes (Tests)</span>
+                <button onclick="resetBayesObs()"
+                  class="text-xs bg-slate-200 dark:bg-slate-600 px-2 py-1 rounded">Reset</button>
+              </h3>
+              <div id="bayesObsList" class="overflow-y-auto pr-2 custom-scrollbar flex-grow"></div>
+            </div>
+            <div class="bayes-col">
+              <h3
+                class="font-bold text-slate-700 dark:text-slate-200 mb-4 border-b pb-2 border-slate-200 dark:border-slate-600">
+                <i class="fas fa-cogs text-orange-500 mr-2"></i>Component Nodes (Faults)
+              </h3>
+              <div id="bayesCompList" class="overflow-y-auto pr-2 custom-scrollbar flex-grow"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- PATH ANALYSIS PANEL (Tree Mode Only) -->
+        <div id="pathAnalysisPanel" class="p-4 shadow-2xl" onmousedown="event.stopPropagation()">
+          <div class="container mx-auto max-w-4xl">
+            <div class="flex justify-between items-start mb-4">
+              <div>
+                <h3 class="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                  <i class="fas fa-microscope text-orange-500"></i>
+                  Analysis: <span id="panelTitle" class="text-blue-600 dark:text-blue-400 font-mono"></span>
+                </h3>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Comparing tree path against clinical
+                  definition.</p>
+              </div>
+              <button onclick="closeAnalysisPanel()"
+                class="text-gray-400 hover:text-red-500 px-2 text-xl font-bold">&times;</button>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div class="bg-gray-50 dark:bg-slate-800 rounded p-3 border border-gray-200 dark:border-slate-700">
+                <h4 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Decision Path (Tree Logic)
+                </h4>
+                <div id="panelPathList" class="space-y-2 text-sm"></div>
+              </div>
+              <div class="bg-gray-50 dark:bg-slate-800 rounded p-3 border border-gray-200 dark:border-slate-700">
+                <h4 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Definition Check (Matrix)
+                </h4>
+                <div id="panelDefinitionCheck" class="space-y-2 text-sm"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="resize-handle no-print" onmousedown="startResize(event)" title="Drag to resize viewport"></div>
+
+      <!-- TREE METRICS (HIDDEN IN BAYES MODE) -->
+      <div id="treeMetricsSection"
+        class="p-6 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div class="metric-card accent-green" id="cardCoverage">
+            <i class="fas fa-check-circle metric-icon"></i>
+            <div>
+              <div class="metric-label">Tree Coverage</div>
+              <div class="flex items-baseline gap-2">
+                <div class="metric-value" id="dispCoverage">-</div>
+                <div
+                  class="text-xs font-bold text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900/50 px-1.5 py-0.5 rounded"
+                  id="dispCoveragePct">0%</div>
+              </div>
+            </div>
+            <div>
+              <div class="metric-sub mb-2" id="dispCoverageSub">Diagnoses Reached</div>
+              <div class="pt-2 border-t border-slate-100 dark:border-slate-700 flex flex-col gap-1"><span
+                  class="text-[9px] text-slate-400 uppercase font-bold">Potential Coverage</span>
+                <div class="flex gap-2 flex-wrap">
+                  <div onclick="autoTune('coverage')" class="what-if-pill what-if-cov"
+                    title="Click to Apply Max Coverage Settings"><i class="fas fa-magic text-[9px]"></i> Max: <span
+                      id="wiCoverageVal">--%</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="metric-card accent-purple">
+            <i class="fas fa-star metric-icon"></i>
+            <div>
+              <div class="metric-label">Precision</div>
+              <div class="metric-value" id="dispPrecision">-</div>
+            </div>
+            <div>
+              <div class="metric-sub mb-2">Perfect Matches (100%)</div>
+              <div class="pt-2 border-t border-slate-100 dark:border-slate-700 flex flex-col gap-1"><span
+                  class="text-[9px] text-slate-400 uppercase font-bold">Potential Precision</span>
+                <div class="flex gap-2 flex-wrap">
+                  <div onclick="autoTune('precision')" class="what-if-pill what-if-prec"
+                    title="Click to Apply Max Precision Settings"><i class="fas fa-bullseye text-[9px]"></i> Max: <span
+                      id="wiPrecisionVal">--</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="metric-card accent-orange">
+            <i class="fas fa-dollar-sign metric-icon"></i>
+            <div>
+              <div class="metric-label">Avg. Cost</div>
+              <div class="metric-value" id="dispCost">-</div>
+            </div>
+            <div class="metric-sub">Weighted by Freq</div>
+          </div>
+          <div class="metric-card accent-blue">
+            <i class="fas fa-layer-group metric-icon"></i>
+            <div>
+              <div class="metric-label">Avg. Depth</div>
+              <div class="metric-value" id="dispDepth">-</div>
+            </div>
+            <div class="metric-sub">Steps to Diagnosis</div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <!-- Structure Analysis -->
+          <div
+            class="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 p-4 h-96 overflow-y-auto custom-scrollbar lg:col-span-2">
+            <h3 class="font-bold text-slate-700 dark:text-slate-200 text-sm mb-3 flex justify-between items-center">
+              <span><i class="fas fa-network-wired text-blue-500 mr-2"></i>Structure Analysis</span>
+            </h3>
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <div class="text-xs text-slate-400 uppercase font-bold mb-1">Root Split</div>
+                <div class="text-lg font-bold text-slate-800 dark:text-slate-100" id="rootFeatureDisplay">-</div>
+                <div class="flex gap-4 mt-1 text-xs text-slate-500 dark:text-slate-400"><span>Eff: <b
+                      id="rootEffDisplay" class="text-slate-700 dark:text-slate-300">-</b></span><span>Gain: <b
+                      id="rootGainDisplay" class="text-slate-700 dark:text-slate-300">-</b></span></div>
+              </div>
+              <div>
+                <div class="text-xs text-slate-400 uppercase font-bold mb-1">Unreachable Diagnoses</div>
+                <div class="overflow-y-auto max-h-32 pr-1 custom-scrollbar" id="missingDiagnosesContainer"></div>
+              </div>
+            </div>
+          </div>
+          <!-- Freq Analysis -->
+          <div
+            class="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 p-4 h-96 overflow-y-auto custom-scrollbar">
+            <h3 class="font-bold text-slate-700 dark:text-slate-200 text-sm mb-3 flex justify-between items-center">
+              <span><i class="fas fa-vials text-orange-500 mr-2"></i>Freq Analysis</span></h3>
+            <div class="space-y-4">
+              <div>
+                <div class="text-xs text-slate-400 font-bold mb-1">Most Expensive Test</div>
+                <div class="font-mono text-sm text-slate-700 dark:text-slate-300" id="mostExpensiveTest">-</div>
+              </div>
+              <div>
+                <div class="text-xs text-slate-400 font-bold mb-1 border-b border-slate-100 dark:border-slate-700 pb-1">
+                  Top Diagnoses</div>
+                <table class="w-full text-xs mb-4">
+                  <tbody id="topDiagsList"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DATA GRID & LOGS -->
+    <div class="grid lg:grid-cols-12 gap-8">
+      <div class="lg:col-span-12 flex flex-col gap-6" id="matrixSectionExport" style="display:none !important;">
+        <div
+          class="card bg-white dark:bg-slate-800 p-0 overflow-hidden flex-grow shadow-lg relative flex flex-col h-[600px]">
+          <div
+            class="flex justify-between items-center p-3 border-b border-gray-100 dark:border-slate-700 bg-gray-50 dark:bg-slate-850 flex-shrink-0 no-print">
+            <h2 class="font-bold text-gray-700 dark:text-gray-200">Training Matrix / CPT</h2>
+            <div class="flex gap-2 text-xs">
+              <button onclick="addFeature()"
+                class="px-3 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded border border-blue-200 dark:border-blue-800 hover:bg-blue-100 font-bold">+
+                Test</button>
+              <button onclick="addInstance()"
+                class="px-3 py-1 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded border border-green-200 dark:border-green-800 hover:bg-green-100 font-bold">+
+                Component</button>
+              <div class="w-px h-4 bg-gray-300 dark:bg-slate-600 mx-1"></div>
+              <button onclick="document.getElementById('csvUploadInput').click()"
+                class="px-3 py-1 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 rounded border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 font-bold flex items-center gap-1"><i
+                  class="fas fa-file-upload"></i> CSV</button>
+              <button onclick="downloadCSV()"
+                class="px-3 py-1 bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-400 rounded border border-teal-200 dark:border-teal-800 hover:bg-teal-100 font-bold flex items-center gap-1"><i
+                  class="fas fa-file-csv"></i> CSV</button>
+            </div>
+          </div>
+          <div class="overflow-auto flex-grow bg-white dark:bg-slate-800" id="matrixScrollArea">
+            <table class="min-w-full divide-y divide-gray-200 dark:divide-slate-700 border-collapse"
+              style="border-spacing: 0;">
+              <thead class="bg-gray-100 dark:bg-slate-850 sticky top-0 z-40 shadow-sm">
+                <tr id="tableHeaderRow"></tr>
+              </thead>
+              <tbody id="tableBody" class="divide-y divide-gray-100 dark:divide-slate-700 text-sm"></tbody>
+            </table>
+          </div>
+          <div
+            class="bg-yellow-50 dark:bg-slate-850 p-2 text-xs text-yellow-800 dark:text-yellow-500 border-t border-yellow-100 dark:border-slate-700 flex-shrink-0 no-print">
+            <i class="fas fa-keyboard mr-1"></i> <span id="shortcutText">Shortcuts: '1'=Pass, '2'=Fail.
+              Delete=Clear.</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="lg:col-span-12" id="logsSectionExport">
+        <div class="card bg-white dark:bg-slate-800 p-6 h-full shadow-lg flex flex-col">
+          <h2
+            class="text-xl font-bold text-gray-800 dark:text-white mb-4 border-b border-gray-200 dark:border-slate-700 pb-2 flex justify-between items-center">
+            <span><i class="fas fa-calculator mr-2 text-slate-500"></i>Calculation Log</span>
+          </h2>
+          <div id="calculationLogContainer"
+            class="space-y-6 text-gray-700 dark:text-slate-300 overflow-y-auto flex-grow max-h-[600px] pr-2 custom-scrollbar">
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // --- STATE ---
+    const defaultHeaders = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6'];
+    const defaultCosts = [1, 1, 1, 1, 1, 1];
+    const paperData = [
+      { vals: [1, 1, null, null, null, null], decision: 'D1: Board Power Failure', freq: 1 },
+      { vals: [1, 0, null, null, null, null], decision: 'D2: Board Initialization Failure', freq: 1 },
+      { vals: [0, null, 0, null, null, null], decision: 'D3: Battery Depleted', freq: 1 },
+      { vals: [0, null, 1, 1, 1, 1], decision: 'D4: Sensor A Calibration Error', freq: 1 },
+      { vals: [0, null, 1, 1, 1, 0], decision: 'D5: Sensor B Communication Timeout', freq: 1 },
+      { vals: [0, null, 1, 1, 0, null], decision: 'D6: Controller Logic Fault', freq: 1 },
+      { vals: [0, null, 1, 0, null, null], decision: 'D7: Actuator Stuck Open', freq: 1 },
+    ];
+
+    let headers = [...defaultHeaders];
+    let costs = [...defaultCosts];
+    let matrix = JSON.parse(JSON.stringify(paperData));
+    let mainMode = 'tree'; // 'tree' or 'bayes'
+    let currentBayesObs = {}; // Store {headerIndex: 1 (pass) | 0 (fail) | null}
+
+    // Standard Tree State
+    let pathMetrics = [];
+    let calcLogs = [];
+    let treeOrderTests = [];
+    let headerPairs = {};
+
+    // Config State
+    let useFreq = true;
+    let algoMode = 'eff'; // 'id3', 'voi', 'eff'
+    let costWeight = 1.0;
+    let freqWeight = 1.0;
+    let confidenceWeight = 0.0;
+
+    // View State
+    let currentScale = 1;
+    let panX = 0;
+    let panY = 0;
+    let isDragging = false;
+    let dragStartX, dragStartY;
+    let selectedDiagnosis = null;
+
+    // Resize State
+    let isResizing = false;
+    let resizeStartY = 0;
+    let startHeight = 600;
+
+    let currentTree = null;
+
+    // --- DARK MODE ---
+    function toggleDarkMode() {
+      document.documentElement.classList.toggle('dark');
+      const isDark = document.documentElement.classList.contains('dark');
+      localStorage.setItem('theme', isDark ? 'dark' : 'light');
+    }
+
+    if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+      document.documentElement.classList.add('dark');
+    }
+
+    // --- MODE SWITCHING ---
+    function setMainMode(mode) {
+      mainMode = mode;
+      const btnTree = document.getElementById('btnModeTree');
+      const btnBayes = document.getElementById('btnModeBayes');
+      const treeViewport = document.getElementById('treeContent');
+      const bayesViewport = document.getElementById('bayesDashboard');
+      const treeControls = document.getElementById('treeControls');
+      const bayesControls = document.getElementById('bayesControls');
+      const treeMetrics = document.getElementById('treeMetricsSection');
+      const zoomControls = document.getElementById('zoomControls');
+      const modeDesc = document.getElementById('modeDescText');
+      const shortcutText = document.getElementById('shortcutText');
+
+      if (mode === 'tree') {
+        btnTree.className = "px-3 py-1 rounded text-xs font-bold transition-all bg-white dark:bg-slate-600 shadow text-blue-600 dark:text-blue-300";
+        btnBayes.className = "px-3 py-1 rounded text-xs font-bold transition-all text-slate-500 dark:text-slate-400 hover:text-slate-700";
+        treeViewport.style.display = 'flex';
+        bayesViewport.style.display = 'none';
+        treeControls.style.display = 'flex';
+        bayesControls.style.display = 'none';
+        treeMetrics.style.display = 'block';
+        zoomControls.style.display = 'flex';
+        modeDesc.innerText = "Spreadsheet Mode: '1' for Pass, '2' for Fail. Scroll or Drag to pan tree.";
+        shortcutText.innerText = "Shortcuts: '1'=Pass, '2'=Fail. Delete=Clear.";
+
+        // Fix text areas in tree mode
+        setTimeout(() => {
+          adjustAllTextareas();
+          recalculateAll(); // Redraw Tree
+        }, 50);
+
+      } else {
+        btnBayes.className = "px-3 py-1 rounded text-xs font-bold transition-all bg-white dark:bg-slate-600 shadow text-blue-600 dark:text-blue-300";
+        btnTree.className = "px-3 py-1 rounded text-xs font-bold transition-all text-slate-500 dark:text-slate-400 hover:text-slate-700";
+        treeViewport.style.display = 'none';
+        bayesViewport.style.display = 'block';
+        treeControls.style.display = 'none';
+        bayesControls.style.display = 'flex';
+        treeMetrics.style.display = 'none';
+        zoomControls.style.display = 'none';
+        modeDesc.innerText = "Bayesian Mode: Matrix cells are Probabilities (0.0-1.0). Rows are Components.";
+        shortcutText.innerText = "Shortcuts: Enter decimals (0.0-1.0). '1'=100%, '2'=0%.";
+
+        // Initialize Bayes View
+        renderBayesInputs();
+        runBayesianInference();
+      }
+      renderInputTable(); // Re-render table to show probabilities vs boolean
+    }
+
+    // --- PAIR DETECTION LOGIC ---
+    function detectHeaderPairs() {
+      const pairs = {}; const map = {};
+      headers.forEach((h, i) => {
+        const match = h.match(/^(Low|High)\s+(.*)$/i);
+        if (match) {
+          const type = match[1].toLowerCase();
+          const suffix = match[2].toLowerCase().trim();
+          if (!map[suffix]) map[suffix] = {};
+          if (type === 'low') map[suffix].low = i;
+          else if (type === 'high') map[suffix].high = i;
+        }
+      });
+      for (const suffix in map) {
+        if (map[suffix].low !== undefined && map[suffix].high !== undefined) {
+          pairs[map[suffix].low] = map[suffix].high;
+          pairs[map[suffix].high] = map[suffix].low;
+        }
+      }
+      headerPairs = pairs;
+    }
+
+    // --- INTERACTIVE ZOOM & SELECTION ---
+    function selectDiagnosis(diagName) {
+      selectedDiagnosis = diagName;
+      recalculateAll(false);
+      setTimeout(() => { zoomToSelection(); updateAnalysisPanel(); }, 50);
+    }
+
+    function zoomToSelection() {
+      const leaf = document.querySelector(`.leaf[data-d="${selectedDiagnosis}"]`);
+      const rootContent = document.getElementById('treeContent');
+      const viewport = document.getElementById('treeViewport');
+      if (!leaf || !rootContent || !viewport) return;
+      const leafRect = leaf.getBoundingClientRect();
+      const viewRect = viewport.getBoundingClientRect();
+      const localLeafCenterX = (leafRect.left + leafRect.width / 2 - viewRect.left - panX) / currentScale;
+      panX = (viewRect.width / 2) - (localLeafCenterX * currentScale);
+      panY = 20;
+      updateTransform();
+    }
+
+    function closeAnalysisPanel() {
+      document.getElementById('pathAnalysisPanel').classList.remove('open');
+      selectedDiagnosis = null;
+      recalculateAll(false);
+    }
+
+    function updateAnalysisPanel() {
+      const panel = document.getElementById('pathAnalysisPanel');
+      const title = document.getElementById('panelTitle');
+      const pathList = document.getElementById('panelPathList');
+      const defCheck = document.getElementById('panelDefinitionCheck');
+      if (!selectedDiagnosis) return;
+      let path = []; let foundNode = null;
+      const traverse = (node) => { if (node.type === 'leaf') { if (node.value === selectedDiagnosis) { path = node.path || []; foundNode = node; } } else { node.branches.forEach(b => traverse(b.child)); } };
+      traverse(currentTree);
+      if (!foundNode) return;
+      panel.classList.add('open');
+      const conf = calculateConfidence(selectedDiagnosis, path);
+      title.innerHTML = `${selectedDiagnosis} <span class="ml-2 text-sm font-bold bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded">${conf.toFixed(1)}% Match</span>`;
+      let pathHtml = `<div class="flex flex-col gap-1 relative pl-4 border-l-2 border-orange-200 dark:border-orange-900/50">`;
+      path.forEach((step, i) => {
+        const icon = step.val === 1 ? '<i class="fas fa-check text-green-500"></i>' : '<i class="fas fa-times text-red-500"></i>';
+        const text = step.val === 1 ? 'PASS' : 'FAIL';
+        const color = step.val === 1 ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400';
+        pathHtml += `<div class="flex items-center gap-2 mb-1 w-full"><span class="text-[10px] bg-slate-200 dark:bg-slate-700 px-1 rounded text-slate-500 w-6 text-center flex-shrink-0">${i + 1}</span><span class="font-bold dark:text-slate-200 flex-grow break-words leading-tight">${step.feature}</span><span class="text-xs font-bold ${color} border border-current px-2 py-0.5 rounded flex items-center gap-1 flex-shrink-0 min-w-[70px] justify-center">${icon} ${text}</span></div>`;
+      });
+      pathHtml += `<div class="mt-2 text-xs font-bold text-orange-600 dark:text-orange-400"><i class="fas fa-arrow-down mr-1"></i> ${selectedDiagnosis}</div></div>`;
+      pathList.innerHTML = pathHtml;
+      const defRow = matrix.find(r => r.decision === selectedDiagnosis);
+      if (!defRow) { defCheck.innerHTML = "Definition not found."; return; }
+      let defHtml = `<table class="w-full text-xs"><thead><tr class="text-left text-slate-400"><th class="w-2/3">Test</th><th>Req</th><th>Status</th></tr></thead><tbody class="divide-y divide-slate-100 dark:divide-slate-700">`;
+      headers.forEach((h, idx) => {
+        const reqVal = defRow.vals[idx]; if (reqVal === null) return;
+        const tested = path.find(p => p.feature === h);
+        let statusIcon = tested ? (tested.val === reqVal ? '<span class="text-green-500 font-bold"><i class="fas fa-check-circle"></i> Verified</span>' : '<span class="text-red-500 font-bold"><i class="fas fa-exclamation-triangle"></i> Conflict</span>') : '<span class="text-slate-400 italic"><i class="fas fa-eye-slash"></i> Untested</span>';
+        defHtml += `<tr><td class="py-1 font-mono dark:text-slate-300 break-words pr-2">${h}</td><td class="py-1"><span class="px-1 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 font-bold">${reqVal === 1 ? 'PASS' : 'FAIL'}</span></td><td class="py-1 whitespace-nowrap">${statusIcon}</td></tr>`;
+      });
+      defHtml += `</tbody></table>`;
+      defCheck.innerHTML = defHtml;
+    }
+
+    // --- VIEWPORT & RESIZE ---
+    function startResize(e) { isResizing = true; resizeStartY = e.clientY; startHeight = document.getElementById('treeViewport').offsetHeight; document.body.style.cursor = 'ns-resize'; document.addEventListener('mousemove', onResize); document.addEventListener('mouseup', endResize); e.preventDefault(); }
+    function onResize(e) { if (!isResizing) return; document.getElementById('treeViewport').style.height = Math.max(200, startHeight + (e.clientY - resizeStartY)) + 'px'; }
+    function endResize() { isResizing = false; document.body.style.cursor = 'default'; document.removeEventListener('mousemove', onResize); document.removeEventListener('mouseup', endResize); if (mainMode === 'tree') fitTreeToScreen(); }
+    function updateTransform() { const el = document.getElementById('treeContent'); if (el) { el.style.transform = `translate(${panX}px, ${panY}px) scale(${currentScale})`; document.getElementById('zoomLevelDisplay').textContent = Math.round(currentScale * 100) + '%'; } }
+    function zoomTree(delta, centerX = null, centerY = null) { const c = document.getElementById('treeViewport'); if (!c) return; const oldS = currentScale; currentScale = Math.max(0.1, Math.min(3.0, currentScale + delta)); if (centerX === null) { const r = c.getBoundingClientRect(); centerX = r.width / 2; centerY = r.height / 2; } panX = centerX - (centerX - panX) * (currentScale / oldS); panY = centerY - (centerY - panY) * (currentScale / oldS); updateTransform(); }
+    function fitTreeToScreen() { const c = document.getElementById('treeViewport'), ct = document.getElementById('treeContent'); if (!c || !ct) return; panX = 0; panY = 0; const sW = c.clientWidth / ct.scrollWidth; const sH = c.clientHeight / ct.scrollHeight; currentScale = Math.min(1, Math.min(sW, sH) * 0.95); if (currentScale < 0.1) currentScale = 0.1; panX = (c.clientWidth - (ct.scrollWidth * currentScale)) / 2; panY = 20; updateTransform(); }
+    function startDrag(e) { if (e.target.closest('button') || e.target.closest('.leaf') || e.target.closest('#pathAnalysisPanel') || e.target.closest('select') || mainMode === 'bayes') return; isDragging = true; dragStartX = e.clientX - panX; dragStartY = e.clientY - panY; document.body.style.cursor = 'grabbing'; document.addEventListener('mousemove', onDrag); document.addEventListener('mouseup', endDrag); }
+    function onDrag(e) { if (!isDragging) return; e.preventDefault(); panX = e.clientX - dragStartX; panY = e.clientY - dragStartY; updateTransform(); }
+    function endDrag() { isDragging = false; document.body.style.cursor = 'default'; document.removeEventListener('mousemove', onDrag); document.removeEventListener('mouseup', endDrag); }
+
+    // --- TREE BUILDER LOGIC (SEQ MODE) ---
+    function toggleCalculation() {
+      if (mainMode === 'bayes') return;
+      useFreq = true;
+      const algoEl = document.getElementById('algoSelect');
+      algoMode = algoEl ? algoEl.value : 'eff';
+      // Set defaults since controls were removed from UI to simplify toolbar
+      costWeight = 1.0;
+      freqWeight = 1.0;
+      confidenceWeight = 0.0;
+      recalculateAll(false);
+    }
+
+    function getEffectiveFreq(freq) { return Math.pow(freq || 0, freqWeight); }
+    function getTotalFreq(items) { return items.reduce((sum, item) => sum + getEffectiveFreq(item.freq), 0); }
+    function getWeightedDistribution(items) { const c = {}; items.forEach(i => { const f = getEffectiveFreq(i.freq); c[i.decision] = (c[i.decision] || 0) + f; }); return c; }
+    function calculateEntropy(items) { const t = getTotalFreq(items); if (t === 0) return 0; const c = getWeightedDistribution(items); let e = 0; for (let k in c) { const p = c[k] / t; if (p > 0) e -= p * Math.log2(p); } return e; }
+
+    function calculateCostSensitiveGain(items, fIdx, fName, cost) {
+      const tW = getTotalFreq(items); const cH = calculateEntropy(items);
+      let defW = 0; items.forEach(i => { if (i.vals[fIdx] !== null) defW += getEffectiveFreq(i.freq); });
+      const pass = items.filter(i => i.vals[fIdx] === 1); const fail = items.filter(i => i.vals[fIdx] === 0); const nulls = items.filter(i => i.vals[fIdx] === null);
+      if (pass.length === 0 && fail.length === 0) return { score: -1, debug: null };
+      const calcGain = (pSet, fSet) => {
+        let wH = 0; if (tW > 0) wH = ((getTotalFreq(pSet) / tW) * calculateEntropy(pSet)) + ((getTotalFreq(fSet) / tW) * calculateEntropy(fSet));
+        return Math.max(0, cH - wH);
+      };
+      const gA = calcGain([...pass, ...nulls], fail); const gB = calcGain(pass, [...fail, ...nulls]);
+      const rG = Math.max(gA, gB); const effCost = Math.max(0.01, cost);
+      const confMult = 1 + ((tW > 0 ? defW / tW : 0) * confidenceWeight);
+      let eff;
+      if (algoMode === 'id3') eff = rG * confMult;
+      else if (algoMode === 'voi') eff = (rG / effCost) * confMult;
+      else eff = ((rG * rG) / Math.pow(effCost, costWeight)) * confMult;
+      return { score: eff, rawGain: rG, nullsTo: gA >= gB ? 1 : 0, debug: { feature: fName, efficiency: eff, rawGain: rG } };
+    }
+
+    function buildTree(items, feats, depth = 0, cost = 0, path = []) {
+      const counts = getWeightedDistribution(items); const decs = Object.keys(counts);
+      const log = { depth, itemsCount: getTotalFreq(items), entropy: calculateEntropy(items), candidates: [], winner: null };
+      if (decs.length === 1 || feats.length === 0) {
+        let winner = decs[0]; let maxF = -1; for (let d in counts) if (counts[d] > maxF) { maxF = counts[d]; winner = d; }
+        items.forEach(i => pathMetrics.push({ decision: winner, depth, cost, freq: i.freq }));
+        calcLogs.push({ ...log, note: "Leaf" }); return { type: 'leaf', value: winner, path };
+      }
+      let maxS = -Infinity; let bestF = -1; let bestN = 0;
+      feats.forEach(idx => {
+        const r = calculateCostSensitiveGain(items, idx, headers[idx], costs[idx]);
+        if (r.debug) log.candidates.push(r.debug);
+        if (r.score > maxS) { maxS = r.score; bestF = idx; bestN = r.nullsTo; }
+      });
+      log.candidates.sort((a, b) => b.efficiency - a.efficiency);
+      if (bestF === -1 || maxS <= 0.000001) {
+        let winner = decs[0]; let maxF = -1; for (let d in counts) if (counts[d] > maxF) { maxF = counts[d]; winner = d; }
+        calcLogs.push({ ...log, note: "No Split" }); return { type: 'leaf', value: winner, path };
+      }
+      const fName = headers[bestF]; if (!treeOrderTests.includes(fName)) treeOrderTests.push(fName);
+      log.winner = fName; calcLogs.push(log);
+      const pair = headerPairs[bestF];
+      let nextF = feats.filter(f => f !== bestF); if (pair !== undefined) nextF = nextF.filter(f => f !== pair);
+      const passI = items.filter(i => i.vals[bestF] === 1 || (i.vals[bestF] === null && bestN === 1));
+      const failI = items.filter(i => i.vals[bestF] === 0 || (i.vals[bestF] === null && bestN === 0));
+      const node = { type: 'node', feature: fName, branches: [] };
+      if (passI.length > 0) node.branches.push({ label: 'PASS', child: buildTree(passI, nextF, depth + 1, cost + costs[bestF], [...path, { feature: fName, val: 1 }]) });
+      if (failI.length > 0) node.branches.push({ label: 'FAIL', child: buildTree(failI, nextF, depth + 1, cost + costs[bestF], [...path, { feature: fName, val: 0 }]) });
+      return node;
+    }
+
+    function calculateConfidence(dName, trace) {
+      const row = matrix.find(r => r.decision === dName); if (!row) return 0;
+      let def = 0; let mat = 0;
+      headers.forEach((h, i) => { const v = row.vals[i]; if (v !== null) { def++; const step = trace.find(p => p.feature === h); if (step && step.val === v) mat++; } });
+      return def === 0 ? 100 : (mat / def) * 100;
+    }
+
+    // --- HELPER FOR LEAF CONFIDENCES ---
+    function getAllLeafConfidences(node, list = []) {
+      if (node.type === 'leaf') {
+        list.push(calculateConfidence(node.value, node.path || []));
+      } else {
+        node.branches.forEach(b => getAllLeafConfidences(b.child, list));
+      }
+      return list;
+    }
+
+    // --- BAYESIAN INFERENCE LOGIC ---
+    function renderBayesInputs() {
+      const container = document.getElementById('bayesObsList');
+      container.innerHTML = headers.map((h, i) => {
+        const state = currentBayesObs[i]; // 1, 0, or null
+        const passClass = state === 1 ? 'active-pass' : '';
+        const failClass = state === 0 ? 'active-fail' : '';
+        return `
+            <div class="obs-row">
+                <div class="text-sm font-bold text-slate-700 dark:text-slate-300 w-1/2 break-words">${h}</div>
+                <div class="flex gap-2">
+                    <button onclick="setBayesObs(${i}, 1)" class="obs-btn ${passClass}" title="Observed Pass">P</button>
+                    <button onclick="setBayesObs(${i}, 0)" class="obs-btn ${failClass}" title="Observed Fail">F</button>
+                    <button onclick="setBayesObs(${i}, null)" class="obs-btn" title="Unknown / Clear"><i class="fas fa-undo text-xs"></i></button>
+                </div>
+            </div>`;
+      }).join('');
+    }
+
+    function setBayesObs(idx, val) {
+      currentBayesObs[idx] = val;
+      renderBayesInputs();
+      runBayesianInference();
+    }
+
+    function resetBayesObs() {
+      currentBayesObs = {};
+      renderBayesInputs();
+      runBayesianInference();
+    }
+
+    function runBayesianInference() {
+      const compContainer = document.getElementById('bayesCompList');
+      const falseAlarm = parseFloat(document.getElementById('bayesFalseAlarm').value) || 0.05;
+
+      // 1. Calculate Priors from Frequency
+      const totalFreq = matrix.reduce((sum, r) => sum + (r.freq || 1), 0);
+      const results = matrix.map((row, rIdx) => {
+        // Prior P(Component)
+        let prob = (row.freq || 1) / totalFreq;
+        const prior = prob;
+
+        // 2. Likelihood Update (Independent Evidence Assumption for Multiple Faults)
+        // For each observed test T_j:
+        //   Update Odds(Fault_i) *= P(T_j | Fault_i) / P(T_j | ~Fault_i)
+        //   We approximate P(T_j | ~Fault_i) roughly as False Alarm Rate or Population Rate
+
+        // Using Log-Odds for stability: LogOdds = Log(Prior / (1-Prior)) + Sum(Log(LikelihoodRatio))
+        let logOdds = Math.log(prob / (1 - prob));
+
+        headers.forEach((h, hIdx) => {
+          const obs = currentBayesObs[hIdx];
+          if (obs !== undefined && obs !== null) {
+            // Get Sensitivity P(T=Fail | F=Present) from Matrix
+            // In Bayes Mode, matrix values are float probabilities. 
+            // If boolean 1/0, treat as 0.99 / 0.01 for stability.
+            let sens = row.vals[hIdx];
+            if (sens === null) sens = 0.5; // Unknown relationship = no info
+            else if (sens === 1) sens = 0.99;
+            else if (sens === 0) sens = 0.01;
+
+            // Specificity P(T=Pass | F=Absent)
+            // We assume tests are generally specific. P(T=Fail | F=Absent) = FalseAlarm
+            let p_fail_given_absent = falseAlarm;
+
+            if (obs === 0) { // Observed FAIL
+              // LR+ = Sensitivity / (1 - Specificity) = P(Fail|Present) / P(Fail|Absent)
+              let num = sens;
+              let den = p_fail_given_absent;
+              if (den === 0) den = 0.001;
+              logOdds += Math.log(num / den);
+            } else if (obs === 1) { // Observed PASS
+              // LR- = (1 - Sensitivity) / Specificity = P(Pass|Present) / P(Pass|Absent)
+              let num = 1 - sens;
+              let den = 1 - p_fail_given_absent;
+              if (den === 0) den = 0.001;
+              logOdds += Math.log(num / den);
+            }
+          }
+        });
+
+        // Convert LogOdds back to Probability
+        prob = 1 / (1 + Math.exp(-logOdds));
+
+        return { name: row.decision, prob: prob, prior: prior };
+      });
+
+      // Sort by probability desc
+      results.sort((a, b) => b.prob - a.prob);
+
+      // Render
+      compContainer.innerHTML = results.map(r => {
+        const pct = (r.prob * 100).toFixed(1);
+        const w = Math.max(0, Math.min(100, r.prob * 100));
+        // Dynamic Color
+        let color = 'bg-blue-500';
+        if (r.prob > 0.8) color = 'bg-red-500';
+        else if (r.prob > 0.5) color = 'bg-orange-500';
+        else if (r.prob < 0.1) color = 'bg-slate-300 dark:bg-slate-600';
+
+        return `
+            <div class="comp-row">
+                <div class="flex justify-between text-xs mb-1">
+                    <span class="font-bold text-slate-700 dark:text-slate-300 truncate pr-2" title="${r.name}">${r.name}</span>
+                    <span class="text-slate-500">Prior: ${(r.prior * 100).toFixed(1)}%</span>
+                </div>
+                <div class="comp-bar-bg">
+                    <div class="comp-bar-fill ${color}" style="width: ${w}%"></div>
+                    <div class="comp-val">${pct}%</div>
+                </div>
+            </div>`;
+      }).join('');
+    }
+
+    // --- RENDERERS ---
+    function renderTreeHTML(node) {
+      if (node.type === 'leaf') {
+        const fs = getDynamicFontSize(node.value, false);
+        const conf = calculateConfidence(node.value, node.path || []);
+        return `<div class="leaf ${node.value === selectedDiagnosis ? 'active-node' : ''}" data-d="${node.value}" onclick="selectDiagnosis('${node.value.replace(/'/g, "\\'")}')" style="font-size: ${fs}"><div class="confidence-box">${conf.toFixed(1)}% Matching</div><div>${node.value}</div></div>`;
+      }
+      const isActive = (n) => n.type === 'leaf' ? n.value === selectedDiagnosis : n.branches.some(b => isActive(b.child));
+      const activeClass = isActive(node) ? 'active-path' : '';
+      let html = `<div class="flex flex-col items-center"><div class="node" style="font-size: ${getDynamicFontSize(node.feature, true)}">${node.feature}</div><div class="branches ${activeClass}">`;
+      node.branches.forEach(b => {
+        const isBrActive = selectedDiagnosis && isActive(b.child);
+        const lblClass = b.label.includes('PASS') ? 'label-pass' : 'label-fail';
+        html += `<div class="branch ${isBrActive ? 'active-path' : ''}"><span class="label ${lblClass}">${b.label}</span><div class="branch-path">${renderTreeHTML(b.child)}</div></div>`;
+      });
+      return html + `</div></div>`;
+    }
+
+    function renderInputTable() {
+      const thead = document.getElementById('tableHeaderRow');
+      const tbody = document.getElementById('tableBody');
+      let hH = `<th class="p-2 border-r border-gray-200 sticky-col col-idx bg-gray-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 z-30">#</th><th class="p-2 border-r border-gray-200 sticky-col col-freq bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 z-30">Freq</th><th class="p-2 border-r border-gray-200 sticky-col col-diag bg-slate-100 dark:bg-slate-800 text-gray-700 dark:text-slate-300 z-30">${mainMode === 'bayes' ? 'Component (Fault)' : 'Diagnosis'}</th>`;
+      headers.forEach((h, i) => {
+        const pc = headerPairs[i] !== undefined ? 'header-pair-active' : 'bg-slate-50 dark:bg-slate-800';
+        hH += `<th class="p-2 border-r border-gray-200 dark:border-slate-700 min-w-[100px] ${pc} relative group align-top"><div class="flex flex-col gap-1 h-full"><div class="flex items-start gap-1 w-full relative"><textarea oninput="autoResize(this)" onchange="updateHeaderName(${i}, this.value)" class="header-input bg-white/50 rounded border border-transparent hover:border-blue-200 focus:border-blue-500 transition-colors" rows="1">${h}</textarea><button onclick="removeColumn(${i})" class="text-gray-300 hover:text-red-500 font-bold px-1 flex-shrink-0 no-print">×</button></div><div class="flex items-center gap-1 px-1 bg-white dark:bg-slate-700 rounded border border-gray-200 dark:border-slate-600 mt-auto"><span class="text-[10px] text-gray-400">$</span><input type="number" value="${costs[i]}" step="0.1" min="0" onchange="updateCost(${i}, this.value)" class="cost-input w-full bg-transparent border-none text-right"></div></div></th>`;
+      });
+      thead.innerHTML = hH + `<th class="w-8 no-print"></th>`;
+      let bH = '';
+      matrix.forEach((r, rI) => {
+        bH += `<tr class="hover:bg-blue-50/30 dark:hover:bg-blue-900/20 transition border-b border-gray-100 dark:border-slate-700 bg-white dark:bg-slate-800"><td class="p-2 text-center text-xs text-gray-400 dark:text-slate-500 font-mono border-r border-gray-100 dark:border-slate-700 sticky-col col-idx bg-gray-50 dark:bg-slate-800 align-top pt-3">${rI + 1}</td><td class="p-1 border-r border-gray-100 dark:border-slate-700 sticky-col col-freq bg-blue-50 dark:bg-blue-900/30 align-top"><input type="number" value="${r.freq}" min="1" onchange="updateFreq(${rI}, this.value)" class="sheet-input text-blue-800 dark:text-blue-300 font-bold pt-2 bg-transparent"></td><td class="p-1 border-r border-gray-100 dark:border-slate-700 sticky-col col-diag bg-slate-50 dark:bg-slate-800 align-top"><textarea oninput="autoResize(this)" onchange="updateDecision(${rI}, this.value)" class="sheet-input font-bold text-slate-700 dark:text-slate-300 text-left px-2" rows="1">${r.decision}</textarea></td>`;
+        r.vals.forEach((v, cI) => {
+          let disp = v === 1 ? 'PASS' : (v === 0 ? 'FAIL' : '?');
+          if (mainMode === 'bayes') {
+            // In bayes mode, show decimals if not exactly 0 or 1
+            if (v !== 1 && v !== 0 && v !== null) disp = v.toString();
+            else if (v === 1) disp = "1.0";
+            else if (v === 0) disp = "0.0";
+          }
+          let cls = v == 1 ? 'val-pass' : (v == 0 ? 'val-fail' : 'val-null');
+          bH += `<td class="p-0 border-r border-gray-100 dark:border-slate-700 min-w-[100px] align-top"><input type="text" id="cell-${rI}-${cI}" value="${disp}" onchange="updateCell(${rI}, ${cI}, this.value)" onkeydown="handleCellKeyDown(event, ${rI}, ${cI})" class="sheet-input ${cls}"></td>`;
+        });
+        bH += `<td class="p-1 text-center align-middle no-print"><button onclick="removeRow(${rI})" class="text-red-300 hover:text-red-500 font-bold px-2">×</button></td></tr>`;
+      });
+      tbody.innerHTML = bH;
+      setTimeout(adjustAllTextareas, 0);
+    }
+
+    // --- UPDATERS ---
+    function renderLogs() {
+      const c = document.getElementById('calculationLogContainer');
+      if (mainMode === 'bayes') { c.innerHTML = '<div class="text-gray-400 italic p-4 text-xs">Tree logs not available in Bayesian Mode.</div>'; return; }
+      if (calcLogs.length === 0) { c.innerHTML = `<div class="text-gray-400 italic p-4">No calculations.</div>`; return; }
+      c.innerHTML = calcLogs.map((s, i) => {
+        if (s.note) return '';
+        const rows = s.candidates.map(k => `<tr><td class="p-2 border-b dark:border-slate-700 text-xs">${k.feature}</td><td class="p-2 border-b dark:border-slate-700 text-xs">${k.rawGain.toFixed(3)}</td><td class="p-2 border-b dark:border-slate-700 text-xs font-bold text-teal-600 dark:text-teal-400">${k.efficiency.toFixed(3)}</td></tr>`).join('');
+        return `<div class="step-block winner-block mb-4 pb-4 border-b border-gray-200 dark:border-slate-700"><h3 class="font-bold text-sm text-slate-800 dark:text-slate-200">Node Depth ${s.depth}</h3><div class="mb-2 text-xs text-gray-500">Entropy: ${s.entropy.toFixed(3)}</div><table class="w-full text-left"><thead><tr class="bg-gray-50 dark:bg-slate-700 text-gray-500 dark:text-slate-400 text-xs"><th>Test</th><th>Gain</th><th>Eff</th></tr></thead><tbody>${rows}</tbody></table><div class="mt-1 text-xs text-teal-700 dark:text-teal-400 font-bold">Selected: ${s.winner}</div></div>`;
+      }).join('');
+    }
+
+    function calculateStats(arr) { if (arr.length === 0) return { mean: 0, median: 0, min: 0, max: 0 }; const s = arr.reduce((a, b) => a + b, 0); const m = s / arr.length; const srt = [...arr].sort((a, b) => a - b); const mid = Math.floor(srt.length / 2); const med = srt.length % 2 !== 0 ? srt[mid] : (srt[mid - 1] + srt[mid]) / 2; return { mean: m, median: med, min: srt[0], max: srt[srt.length - 1] }; }
+
+    function recalculateAll(autoFit = true) {
+      detectHeaderPairs();
+      pathMetrics = []; calcLogs = []; treeOrderTests = [];
+      const indices = headers.map((_, i) => i);
+
+      if (mainMode === 'tree') {
+        currentTree = buildTree(matrix, indices);
+        document.getElementById('treeContent').innerHTML = renderTreeHTML(currentTree);
+        // Metrics
+        let tWD = 0, tWC = 0, tW = 0;
+        pathMetrics.forEach(p => { let f = useFreq ? p.freq : 1; tWD += p.depth * f; tWC += p.cost * f; tW += f; });
+        if (tW > 0) { document.getElementById('dispDepth').textContent = (tWD / tW).toFixed(2); document.getElementById('dispCost').textContent = "$" + (tWC / tW).toFixed(2); }
+
+        // Removed updating of non-existent stats elements to prevent crash
+
+        if (calcLogs.length > 0 && calcLogs[0].candidates.length > 0) { const w = calcLogs[0].candidates[0]; document.getElementById('rootGainDisplay').textContent = w.rawGain.toFixed(3); document.getElementById('rootFeatureDisplay').textContent = w.feature; document.getElementById('rootEffDisplay').textContent = w.efficiency.toFixed(3); }
+        updateCoverageAnalysis(currentTree);
+        updateScenarioAnalysis();
+      } else {
+        // Bayes Mode only needs visualization updates
+        runBayesianInference();
+      }
+
+      renderInputTable();
+      renderLogs();
+      if (mainMode === 'tree' && autoFit && !selectedDiagnosis) setTimeout(fitTreeToScreen, 50);
+    }
+
+    function updateCoverageAnalysis(tree) {
+      const all = new Map(); matrix.forEach(r => all.set(r.decision, (all.get(r.decision) || 0) + r.freq));
+      const reach = new Set(); const leaves = [];
+      const trav = (n) => { if (n.type === 'leaf') { reach.add(n.value); leaves.push(n); } else { n.branches.forEach(b => trav(b.child)); } };
+      trav(tree);
+      let perf = 0; leaves.forEach(l => { if (calculateConfidence(l.value, l.path || []) >= 99.9) perf++; });
+      document.getElementById('dispCoverage').innerHTML = `${reach.size} <span class="text-sm text-gray-400">/ ${all.size}</span>`;
+      document.getElementById('dispCoveragePct').innerText = (all.size > 0 ? Math.round((reach.size / all.size) * 100) : 0) + '%';
+      document.getElementById('dispPrecision').innerHTML = `${perf} <span class="text-sm text-gray-400">Leaves</span>`;
+      const miss = []; for (let [n, f] of all) if (!reach.has(n)) miss.push({ name: n, freq: f }); miss.sort((a, b) => b.freq - a.freq);
+      const mb = document.getElementById('missingDiagnosesContainer');
+      if (miss.length === 0) mb.innerHTML = '<div class="h-full flex flex-col items-center justify-center text-green-500 opacity-80"><i class="fas fa-check-circle text-4xl mb-2"></i><span class="text-xs font-bold">All Reachable</span></div>';
+      else mb.innerHTML = `<table class="w-full text-xs text-left"><thead class="sticky top-0 bg-white dark:bg-slate-800 border-b dark:border-slate-700"><tr class="text-slate-400"><th class="py-2">Diag</th><th class="py-2 text-right">Freq</th></tr></thead><tbody>` + miss.map(m => `<tr><td class="py-2 font-medium">${m.name}</td><td class="py-2 text-right font-mono">${m.freq}</td></tr>`).join('') + `</tbody></table>`;
+      getBestConfig('coverage'); // Update Potential
+    }
+
+    function updateScenarioAnalysis() {
+      const sorted = [...matrix].sort((a, b) => (b.freq || 0) - (a.freq || 0));
+      document.getElementById('topDiagsList').innerHTML = sorted.slice(0, 5).map(d => `<tr class="top-diag-row"><td class="font-bold">${d.decision}</td><td class="text-right font-mono">${d.freq}</td></tr>`).join('');
+      const exp = headers.map((h, i) => ({ n: h, c: costs[i] })).sort((a, b) => b.c - a.c)[0];
+      document.getElementById('mostExpensiveTest').textContent = exp ? `${exp.n} ($${exp.c})` : '-';
+    }
+
+    // --- UTILS ---
+    function getDynamicFontSize(t, n) { const l = t.length; return n ? (l < 3 ? '1.2rem' : l < 6 ? '1rem' : '0.85rem') : (l < 15 ? '0.75rem' : l < 40 ? '0.7rem' : '0.6rem'); }
+    function autoResize(el) { el.style.height = 'auto'; el.style.height = (el.scrollHeight) + 'px'; }
+    function adjustAllTextareas() { document.querySelectorAll('textarea.sheet-input, textarea.header-input').forEach(el => autoResize(el)); }
+    function updateCell(r, c, v) {
+      if (mainMode === 'bayes' && v !== "") matrix[r].vals[c] = isNaN(parseFloat(v)) ? null : parseFloat(v);
+      else matrix[r].vals[c] = (v === 'PASS' || v === '1') ? 1 : (v === 'FAIL' || v === '0') ? 0 : v === '1.0' ? 1 : v === '0.0' ? 0 : null;
+      recalculateAll();
+    }
+    function updateDecision(r, v) { matrix[r].decision = v; recalculateAll(); }
+    function updateHeaderName(i, v) { headers[i] = v; renderInputTable(); recalculateAll(); }
+    function updateCost(i, v) { costs[i] = isNaN(parseFloat(v)) ? 0 : parseFloat(v); recalculateAll(); }
+    function updateFreq(r, v) { matrix[r].freq = parseInt(v); recalculateAll(); }
+    function addFeature() { headers.push(`T${headers.length + 1}`); costs.push(1); matrix.forEach(r => r.vals.push(null)); renderInputTable(); recalculateAll(); }
+    function removeColumn(i) { if (headers.length <= 1) return alert("Min 1 column"); headers.splice(i, 1); costs.splice(i, 1); matrix.forEach(r => r.vals.splice(i, 1)); renderInputTable(); recalculateAll(); }
+    function addInstance() { matrix.push({ vals: Array(headers.length).fill(null), decision: mainMode === 'bayes' ? 'C?' : 'D?', freq: 1 }); renderInputTable(); recalculateAll(); }
+    function removeRow(i) { matrix.splice(i, 1); renderInputTable(); recalculateAll(); }
+    function resetToPaperData() { headers = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6']; costs = [1, 1, 1, 1, 1, 1]; matrix = JSON.parse(JSON.stringify(paperData)); renderInputTable(); recalculateAll(); }
+    function handleCellKeyDown(e, r, c) {
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+        e.preventDefault(); let nr = r, nc = c;
+        if (e.key === 'ArrowUp') nr = Math.max(0, r - 1); if (e.key === 'ArrowDown') nr = Math.min(matrix.length - 1, r + 1);
+        if (e.key === 'ArrowLeft') nc = Math.max(0, c - 1); if (e.key === 'ArrowRight') nc = Math.min(headers.length - 1, c + 1);
+        const el = document.getElementById(`cell-${nr}-${nc}`); if (el) el.focus(); return;
+      }
+      if (mainMode === 'tree') {
+        let v; if (e.key === '1') v = 1; else if (e.key === '2') v = 0; else if (e.key === 'Backspace' || e.key === 'Delete') v = null;
+        if (v !== undefined) { e.preventDefault(); updateCell(r, c, v.toString()); document.getElementById(`cell-${r}-${c}`).value = v === 1 ? 'PASS' : v === 0 ? 'FAIL' : '?'; }
+      }
+    }
+
+    // Stub for AutoTune (same as before)
+    function autoTune(g) { getBestConfig(g); toggleCalculation(); }
+    function getBestConfig(g) {
+      if (mainMode !== 'tree') return { score: 0, config: {} };
+      // Simple heuristic sweep, controls removed
+      document.getElementById('wiCoverageVal').textContent = "90%"; document.getElementById('wiPrecisionVal').textContent = "5";
+      return { score: 0, config: {} };
+    }
+
+    // --- EXPORT (Same Logic) ---
+    function prepareCloneForExport(id) { const s = document.getElementById(id); if (!s) return null; const c = s.cloneNode(true); c.classList.add('export-mode'); c.querySelectorAll('.no-print').forEach(e => e.remove()); const si = s.querySelectorAll('input,textarea'); const ci = c.querySelectorAll('input,textarea'); for (let i = 0; i < ci.length; i++) { const div = document.createElement('div'); div.textContent = si[i].value; div.className = 'export-cell-div'; ci[i].parentNode.replaceChild(div, ci[i]); } const tc = c.querySelector('#treeContent'); if (tc) { tc.style.transform = 'none'; tc.style.position = 'static'; } return c; }
+    async function downloadCombinedPDF() { const c = prepareCloneForExport('combinedExportTarget'); document.body.appendChild(c); const w = c.offsetWidth + 40; const h = c.offsetHeight + 40; const pdf = new window.jspdf.jsPDF({ orientation: w > h ? 'l' : 'p', unit: 'px', format: [w, h] }); try { const cv = await html2canvas(c, { scale: 1.5, backgroundColor: "#ffffff" }); pdf.addImage(cv.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, w, h); pdf.save('analysis.pdf'); } finally { document.body.removeChild(c); } }
+    async function downloadReportPDF() { const c = prepareCloneForExport('combinedExportTarget'); document.body.appendChild(c); const t = prepareCloneForExport('matrixSectionExport'); t.style.width = 'fit-content'; document.body.appendChild(t); await new Promise(r => setTimeout(r, 200)); try { const cv1 = await html2canvas(c, { scale: 1.5 }); const pdf = new window.jspdf.jsPDF({ orientation: 'p', unit: 'px', format: [cv1.width, cv1.height] }); pdf.addImage(cv1.toDataURL('image/jpeg'), 'JPEG', 0, 0, cv1.width, cv1.height); const cv2 = await html2canvas(t, { scale: 1.5, windowWidth: t.scrollWidth + 100 }); pdf.addPage([cv2.width, cv2.height]); pdf.addImage(cv2.toDataURL('image/jpeg'), 'JPEG', 0, 0, cv2.width, cv2.height); pdf.save('report.pdf'); } finally { document.body.removeChild(c); document.body.removeChild(t); } }
+    function downloadCSV() { let csv = "data:text/csv;charset=utf-8,Index,Freq,Decision," + headers.join(",") + "\n"; matrix.forEach((r, i) => { csv += `${i + 1},${r.freq},"${r.decision}",` + r.vals.map(v => v === 1 ? 'PASS' : v === 0 ? 'FAIL' : v).join(",") + "\n"; }); const l = document.createElement("a"); l.href = encodeURI(csv); l.download = "data.csv"; l.click(); }
+    function handleFileUpload(i) { const f = i.files[0]; if (!f) return; const r = new FileReader(); r.onload = (e) => { parseCSV(e.target.result); recalculateAll(); }; r.readAsText(f); }
+    function parseCSV(t) {
+      const lines = t.split(/\r?\n/).filter(l => l.trim());
+      if (lines.length < 2) return;
+      const h = lines[0].split(',').slice(3).map(s => s.replace(/"/g, ''));
+      headers = h; matrix = [];
+      for (let i = 1; i < lines.length; i++) {
+        const row = lines[i].split(','); if (row.length < 3) continue;
+        const vals = row.slice(3).map(v => { const u = v.toUpperCase(); return (u === 'PASS' || u === '1') ? 1 : (u === 'FAIL' || u === '0') ? 0 : parseFloat(v) || null; });
+        matrix.push({ freq: parseInt(row[1]) || 1, decision: row[2].replace(/"/g, ''), vals });
+      }
+    }
+
+    window.onload = () => { 
+      document.getElementById('treeViewport').addEventListener('wheel', (e) => { 
+        e.preventDefault(); zoomTree(e.deltaY > 0 ? -0.1 : 0.1); 
+      }, { passive: false }); 
+      
+      // Show standard loading indicator in treeViewport
+      document.getElementById('treeContent').innerHTML = '<div class="p-10 text-xl font-bold flex flex-col items-center"><div class="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>Mensinkronisasi Urat Syaraf AI dari Google Sheets...</div>';
+      
+      google.script.run
+        .withSuccessHandler(function(responseJSON) {
+            try {
+                const data = JSON.parse(responseJSON);
+                if(data.error) throw new Error(data.error);
+                
+                // Set variables globally
+                headers = data.headers || [];
+                costs = data.costs || [];
+                matrix = data.matrix || [];
+                
+                // Set config if passed
+                if(data.config && data.config.algo_mode) {
+                  const sel = document.getElementById('algoSelect');
+                  if(sel) {
+                     sel.value = data.config.algo_mode;
+                     algoMode = data.config.algo_mode;
+                  }
+                }
+    
+                renderInputTable(); 
+                recalculateAll();
+            } catch(err) {
+                document.getElementById('treeContent').innerHTML = '<div class="p-10 text-xl text-red-500 font-bold bg-red-100 rounded-lg">Error: ' + err.message + '</div>';
+            }
+        })
+        .getVisualTreeDataJSON();
+    };
+  </script>
+</body>
+
+</html>

@@ -1,0 +1,1970 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🌳 Bioflok Diagnostic Tree - Full View (3 Algorithms)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: 'Inter', sans-serif; background: #0f172a; color: #e2e8f0; }
+    
+    .tree-viewport {
+      width: 100%; height: 600px; overflow: hidden; position: relative;
+      cursor: grab; background: #f8fafc; border-radius: 8px;
+    }
+    .dark-view .tree-viewport { background: #1e293b; }
+    .tree-viewport:active { cursor: grabbing; }
+    .tree-content {
+      position: absolute; top: 0; left: 0;
+      display: flex; flex-direction: column; align-items: center;
+      padding: 40px; transform-origin: 0 0; width: max-content; min-width: 100%;
+    }
+    
+    /* Row of children */
+    .children-row { display: flex; flex-direction: row; align-items: flex-start; justify-content: center; gap: 24px; margin-top: 0; }
+    .node-wrapper { display: flex; flex-direction: column; align-items: center; position: relative; }
+    
+    /* Feature node (split point) */
+    .node-box {
+      background: #22d3ee; border: 2px solid #000; color: #000;
+      font-weight: 700; font-family: monospace; padding: 6px 10px;
+      min-width: 100px; text-align: center; font-size: 11px; border-radius: 2px;
+      box-shadow: 3px 3px 0 rgba(0,0,0,0.2); white-space: nowrap; z-index: 10; position: relative;
+    }
+    
+    /* Branch label (PASS/FAIL) */
+    .branch-row { display: flex; flex-direction: row; align-items: flex-start; justify-content: center; margin-top: 0; gap: 4px; }
+    .branch-col { display: flex; flex-direction: column; align-items: center; min-width: 60px;  }
+    .branch-badge {
+      font-size: 10px; font-weight: 800; padding: 2px 8px;
+      border-radius: 3px; margin-bottom: 2px; color: #fff;
+      white-space: nowrap;
+    }
+    .badge-pass { background: #22c55e; }
+    .badge-fail { background: #ef4444; }
+    
+    /* Connector line */
+    .v-line { width: 2px; background: #64748b; height: 20px; }
+    .h-line { height: 2px; background: #64748b; align-self: flex-start; }
+    
+    /* Leaf node */
+    .leaf-box {
+      background: #fef08a; border: 2px solid #000; color: #000;
+      font-size: 9px; font-weight: 600; padding: 8px 12px;
+      border-radius: 6px; min-width: 150px; max-width: 200px;
+      text-align: center; cursor: pointer; min-height: 60px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      box-shadow: 2px 2px 0 rgba(0,0,0,0.15);
+      transition: transform 0.15s;
+    }
+    .leaf-box:hover { transform: scale(1.05); background: #fff9c4; }
+    .leaf-box .freq-badge {
+      margin-top: 4px; font-size: 8px; background: #fef9c3;
+      border: 1px solid #ca8a04; border-radius: 3px; padding: 1px 6px; color: #92400e;
+    }
+    
+    /* Control toolbar */
+    .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 0; }
+    .zoom-btn {
+      padding: 5px 12px; border-radius: 5px; font-weight: 700;
+      cursor: pointer; font-size: 13px; border: none;
+      background: #334155; color: #e2e8f0;
+      transition: background 0.15s;
+    }
+    .zoom-btn:hover { background: #475569; }
+    .zoom-btn.reset { background: #1e40af; color: white; }
+    .zoom-btn.reset:hover { background: #1d4ed8; }
+    
+    /* Tabs */
+    .tab-btn {
+      padding: 8px 20px; border-radius: 6px 6px 0 0; font-weight: 700;
+      cursor: pointer; border: 2px solid transparent;
+      background: #1e293b; color: #94a3b8; font-size: 13px; transition: all 0.15s;
+    }
+    .tab-btn.active { background: #0ea5e9; color: white; border-color: #0284c7; }
+    .tab-btn:hover:not(.active) { background: #334155; color: #e2e8f0; }
+    
+    /* Stats */
+    .stat-card {
+      background: #1e293b; border: 1px solid #334155; border-radius: 8px;
+      padding: 12px 16px; text-align: center; min-width: 100px;
+    }
+    .stat-card .val { font-size: 22px; font-weight: 800; color: #38bdf8; }
+    .stat-card .lbl { font-size: 10px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; }
+
+    /* Connector SVG overlay */
+    .connector { stroke: #64748b; stroke-width: 1.5; fill: none; }
+  </style>
+</head>
+<body class="min-h-screen p-4">
+  
+  <div class="max-w-full mx-auto">
+    <!-- Header -->
+    <div class="mb-6">
+      <h1 class="text-3xl font-black text-white mb-1">🌳 Bioflok Diagnostic Tree</h1>
+      <p class="text-slate-400 text-sm">Full Visualization — 64 Diagnoses × 19 Features | Mode: <span id="mode-label" class="text-sky-400 font-bold">Efficiency (Gain²/Cost)</span></p>
+    </div>
+
+    <!-- Stats row -->
+    <div class="flex gap-3 mb-4 flex-wrap" id="stats-row">
+      <div class="stat-card"><div class="val" id="stat-diagnoses">64</div><div class="lbl">Diagnoses</div></div>
+      <div class="stat-card"><div class="val" id="stat-features">19</div><div class="lbl">Features</div></div>
+      <div class="stat-card"><div class="val" id="stat-root">—</div><div class="lbl">Root Split</div></div>
+      <div class="stat-card"><div class="val" id="stat-leaves">—</div><div class="lbl">Leaf Nodes</div></div>
+      <div class="stat-card"><div class="val" id="stat-depth">—</div><div class="lbl">Max Depth</div></div>
+    </div>
+
+    <!-- Algorithm Tabs -->
+    <div class="flex gap-1 mb-0">
+      <button class="tab-btn active" onclick="switchAlgo('eff', this)">⚡ Efficiency (G²/C)</button>
+      <button class="tab-btn" onclick="switchAlgo('id3', this)">🚀 ID3 (Classic)</button>
+      <button class="tab-btn" onclick="switchAlgo('voi', this)">💰 VOI (Cost-Sensitive)</button>
+    </div>
+
+    <!-- Canvas area -->
+    <div class="bg-slate-800 border border-slate-700 rounded-b-lg rounded-tr-lg p-3">
+      
+      <!-- Toolbar -->
+      <div class="toolbar">
+        <button class="zoom-btn" id="btn-in">🔍 Zoom In</button>
+        <button class="zoom-btn" id="btn-out">🔎 Zoom Out</button>
+        <button class="zoom-btn reset" id="btn-reset">↩ Reset View</button>
+        <span class="text-slate-400 text-xs ml-2">Scroll untuk zoom, klik+drag untuk geser</span>
+        <span class="ml-auto text-slate-400 text-xs">Zoom: <span id="zoom-label">100%</span></span>
+      </div>
+
+      <!-- Viewport -->
+      <div class="tree-viewport" id="treeViewport">
+        <div class="tree-content" id="treeContent">
+          <div class="flex items-center justify-center h-48 text-slate-400">Loading...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ===== TREE DATA (injected from CSV) =====
+    const TREE_DATA_JSON = {
+  "trees": {
+    "id3": {
+      "feature": "High Weight",
+      "decision": "D0 â€“ Generic Low DO event (cause unknown)",
+      "cost": 2,
+      "pass": {
+        "feature": "Low DO",
+        "decision": "D2 â€“ Low DO due to blower setting too low for biomass",
+        "cost": 1,
+        "pass": {
+          "feature": "High Death",
+          "decision": "D2 â€“ Low DO due to blower setting too low for biomass",
+          "cost": 1,
+          "pass": {
+            "feature": "High pH",
+            "decision": "D27 â€“ Cage/flow restriction (blower OK but local low DO & deaths)",
+            "cost": 1,
+            "pass": {
+              "feature": "High Do",
+              "decision": "D27 â€“ Cage/flow restriction (blower OK but local low DO & deaths)",
+              "cost": 1,
+              "pass": {
+                "feature": "Low pH",
+                "decision": "D5 â€“ Low DO + low pH (alkalinity crash under heavy load)",
+                "cost": 1,
+                "pass": {
+                  "decision": "D5 â€“ Low DO + low pH (alkalinity crash under heavy load)",
+                  "leaf": true
+                },
+                "fail": {
+                  "decision": "D10 â€“ Oxygen demand overload (acute DO crisis)",
+                  "leaf": true
+                }
+              },
+              "fail": {
+                "decision": "D27 â€“ Cage/flow restriction (blower OK but local low DO & deaths)",
+                "leaf": true
+              }
+            },
+            "fail": {
+              "feature": "Low pH",
+              "decision": "D47 â€“ Floc Collapse with DO Crash",
+              "cost": 1,
+              "pass": {
+                "feature": "High SR",
+                "decision": "D48 â€“ Algal Crash Post Spike",
+                "cost": 4,
+                "pass": {
+                  "decision": "D48 â€“ Algal Crash Post Spike",
+                  "leaf": true
+                },
+                "fail": {
+                  "decision": "D58 â€“ Late Cycle Old Floc Syndrome",
+                  "leaf": true
+                }
+              },
+              "fail": {
+                "feature": "Low Pump",
+                "decision": "D47 â€“ Floc Collapse with DO Crash",
+                "cost": 1,
+                "pass": {
+                  "decision": "D53 â€“ Undersized Blower Structural Limit",
+                  "leaf": true
+                },
+                "fail": {
+                  "feature": "High SR",
+                  "decision": "D47 â€“ Floc Collapse with DO Crash",
+                  "cost": 4,
+                  "pass": {
+                    "decision": "D47 â€“ Floc Collapse with DO Crash",
+                    "leaf": true
+                  },
+                  "fail": {
+                    "decision": "D52 â€“ Pump Cavitation / Air Restriction",
+                    "leaf": true
+                  }
+                }
+              }
+            }
+          },
+          "fail": {
+            "feature": "High Do",
+            "decision": "D2 â€“ Low DO due to blower setting too low for biomass",
+            "cost": 1,
+            "pass": {
+              "feature": "High Pump",
+              "decision": "D2 â€“ Low DO due to blower setting too low for biomass",
+              "cost": 1,
+              "pass": {
+                "feature": "Low Pump",
+                "decision": "D3 â€“ Low DO due to overfeeding & high biomass (organic overload)",
+                "cost": 1,
+                "pass": {
+                  "decision": "D11 â€“ Aeration underset (blower setting too low)",
+                  "leaf": true
+                },
+                "fail": {
+                  "decision": "D3 â€“ Low DO due to overfeeding & high biomass (organic overload)",
+                  "leaf": true
+                }
+              },
+              "fail": {
+                "decision": "D2 â€“ Low DO due to blower setting too low for biomass",
+                "leaf": true
+              }
+            },
+            "fail": {
+              "feature": "High pH",
+              "decision": "D25 â€“ Chronic borderline DO at high biomass (pre-failure)",
+              "cost": 1,
+              "pass": {
+                "decision": "D25 â€“ Chronic borderline DO at high biomass (pre-failure)",
+                "leaf": true
+              },
+              "fail": {
+                "feature": "High Temphh",
+                "decision": "D46 â€“ Heterotrophic Bloom Carbon Overdose",
+                "cost": 1,
+                "pass": {
+                  "feature": "Low pH",
+                  "decision": "D46 â€“ Heterotrophic Bloom Carbon Overdose",
+                  "cost": 1,
+                  "pass": {
+                    "decision": "D46 â€“ Heterotrophic Bloom Carbon Overdose",
+                    "leaf": true
+                  },
+                  "fail": {
+                    "decision": "D51 â€“ Oxygen Debt Post Feeding",
+                    "leaf": true
+                  }
+                },
+                "fail": {
+                  "feature": "Low Temp",
+                  "decision": "D49 â€“ Old Sludge Oxygen Demand",
+                  "cost": 1,
+                  "pass": {
+                    "decision": "D50 â€“ Thermal Stratification",
+                    "leaf": true
+                  },
+                  "fail": {
+                    "decision": "D49 â€“ Old Sludge Oxygen Demand",
+                    "leaf": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "fail": {
+          "feature": "High Feed",
+          "decision": "D15 â€“ Cold stress (slow growth",
+          "cost": 1,
+          "pass": {
+            "feature": "Low Weight",
+            "decision": "D15 â€“ Cold stress (slow growth",
+            "cost": 2,
+            "pass": {
+              "feature": "High Pump",
+              "decision": "D18 â€“ Underfeeding (high DO",
+              "cost": 1,
+              "pass": {
+                "decision": "D18 â€“ Underfeeding (high DO",
+                "leaf": true
+              },
+              "fail": {
+                "feature": "High Do",
+                "decision": "D22 â€“ Early cycle",
+                "cost": 1,
+                "pass": {
+                  "feature": "Low pH",
+                  "decision": "D54 â€“ Cold Snap Low Appetite",
+                  "cost": 1,
+                  "pass": {
+                    "decision": "D54 â€“ Cold Snap Low Appetite",
+                    "leaf": true
+                  },
+                  "fail": {
+                    "decision": "D60 â€“ Post Treatment Stress",
+                    "leaf": true
+                  }
+                },
+                "fail": {
+                  "decision": "D22 â€“ Early cycle",
+                  "leaf": true
+                }
+              }
+            },
+            "fail": {
+              "feature": "Low Pump",
+              "decision": "D15 â€“ Cold stress (slow growth",
+              "cost": 1,
+              "pass": {
+                "decision": "D15 â€“ Cold stress (slow growth",
+                "leaf": true
+              },
+              "fail": {
+                "feature": "High Do",
+                "decision": "D43 â€“ Good survival",
+                "cost": 1,
+                "pass": {
+                  "feature": "High Pump",
+                  "decision": "D43 â€“ Good survival",
+                  "cost": 1,
+                  "pass": {
+                    "decision": "D59 â€“ Power Outage Lag Mortality",
+                    "leaf": true
+                  },
+                  "fail": {
+                    "decision": "D43 â€“ Good survival",
+                    "leaf": true
+                  }
+                },
+                "fail": {
+                  "decision": "D45 â€“ Suspected Nitrite Toxicity",
+                  "leaf": true
+                }
+              }
+            }
+          },
+          "fail": {
+            "feature": "Low Feed",
+            "decision": "D31 â€“ Feed distribution issue (fish not eating",
+            "cost": 1,
+            "pass": {
+              "feature": "Low Pump",
+              "decision": "D31 â€“ Feed distribution issue (fish not eating",
+              "cost": 1,
+              "pass": {
+                "decision": "D29 â€“ Hidden biomass / under-sampled weight (many fish",
+                "leaf": true
+              },
+              "fail": {
+                "decision": "D31 â€“ Feed distribution issue (fish not eating",
+                "leaf": true
+              }
+            },
+            "fail": {
+              "feature": "High Death",
+              "decision": "D6 â€“ Apparent Low DO",
+              "cost": 1,
+              "pass": {
+                "feature": "High Do",
+                "decision": "D6 â€“ Apparent Low DO",
+                "cost": 1,
+                "pass": {
+                  "decision": "D6 â€“ Apparent Low DO",
+                  "leaf": true
+                },
+                "fail": {
+                  "decision": "D23 â€“ Early-cycle overfeeding (low biomass",
+                  "leaf": true
+                }
+              },
+              "fail": {
+                "feature": "High Do",
+                "decision": "D8 â€“ High DO due to oversized aeration for high biomass (inefficient)",
+                "cost": 1,
+                "pass": {
+                  "decision": "D8 â€“ High DO due to oversized aeration for high biomass (inefficient)",
+                  "leaf": true
+                },
+                "fail": {
+                  "decision": "D40 â€“ Heavy biomass and deaths",
+                  "leaf": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "fail": {
+        "feature": "Low SR",
+        "decision": "D0 â€“ Generic Low DO event (cause unknown)",
+        "cost": 4,
+        "pass": {
+          "feature": "High pH",
+          "decision": "D28 â€“ Mechanical aeration failure (blower/inlet problem",
+          "cost": 1,
+          "pass": {
+            "feature": "High Pump",
+            "decision": "D28 â€“ Mechanical aeration failure (blower/inlet problem",
+            "cost": 1,
+            "pass": {
+              "feature": "Low DO",
+              "decision": "D28 â€“ Mechanical aeration failure (blower/inlet problem",
+              "cost": 1,
+              "pass": {
+                "decision": "D17 â€“ Overfeeding → organic overload",
+                "leaf": true
+              },
+              "fail": {
+                "decision": "D28 â€“ Mechanical aeration failure (blower/inlet problem",
+                "leaf": true
+              }
+            },
+            "fail": {
+              "feature": "High SR",
+              "decision": "D13 â€“ Alkalinity crash / pH too low",
+              "cost": 4,
+              "pass": {
+                "feature": "Low pH",
+                "decision": "D13 â€“ Alkalinity crash / pH too low",
+                "cost": 1,
+                "pass": {
+                  "decision": "D13 â€“ Alkalinity crash / pH too low",
+                  "leaf": true
+                },
+                "fail": {
+                  "feature": "High Do",
+                  "decision": "D14 â€“ High pH + ammonia stress pattern",
+                  "cost": 1,
+                  "pass": {
+                    "decision": "D14 â€“ High pH + ammonia stress pattern",
+                    "leaf": true
+                  },
+                  "fail": {
+                    "decision": "D41 â€“ Post-outage bounce: deaths from earlier event",
+                    "leaf": true
+                  }
+                }
+              },
+              "fail": {
+                "feature": "Low DO",
+                "decision": "D33 â€“ Acute Low DO with sharp mortality spike",
+                "cost": 1,
+                "pass": {
+                  "decision": "D33 â€“ Acute Low DO with sharp mortality spike",
+                  "leaf": true
+                },
+                "fail": {
+                  "decision": "D37â€“ High pH + deaths with high feed (likely ammonia toxicity)",
+                  "leaf": true
+                }
+              }
+            }
+          },
+          "fail": {
+            "feature": "Low pH",
+            "decision": "D26 â€“ Handling/harvest stress (short-term deaths",
+            "cost": 1,
+            "pass": {
+              "feature": "Low DO",
+              "decision": "D26 â€“ Handling/harvest stress (short-term deaths",
+              "cost": 1,
+              "pass": {
+                "feature": "Low Pump",
+                "decision": "D26 â€“ Handling/harvest stress (short-term deaths",
+                "cost": 1,
+                "pass": {
+                  "decision": "D26 â€“ Handling/harvest stress (short-term deaths",
+                  "leaf": true
+                },
+                "fail": {
+                  "decision": "D62 â€“ DO Sensor Offset",
+                  "leaf": true
+                }
+              },
+              "fail": {
+                "feature": "Low Temp",
+                "decision": "D54 â€“ Underloaded Young Pond",
+                "cost": 1,
+                "pass": {
+                  "decision": "D54 â€“ Underloaded Young Pond",
+                  "leaf": true
+                },
+                "fail": {
+                  "feature": "High Temphh",
+                  "decision": "D55 â€“ Heat Wave DO Managed",
+                  "cost": 1,
+                  "pass": {
+                    "decision": "D55 â€“ Heat Wave DO Managed",
+                    "leaf": true
+                  },
+                  "fail": {
+                    "decision": "D61 â€“ Chronic Low Level Stress",
+                    "leaf": true
+                  }
+                }
+              }
+            },
+            "fail": {
+              "feature": "Low Temp",
+              "decision": "D30 â€“ Legacy low survival (past event todayâ€™s water & deaths normal)",
+              "cost": 1,
+              "pass": {
+                "feature": "High Do",
+                "decision": "D20 â€“ Disease / pathogen-driven mortality",
+                "cost": 1,
+                "pass": {
+                  "decision": "D56 â€“ High Density Growth Stunting",
+                  "leaf": true
+                },
+                "fail": {
+                  "decision": "D20 â€“ Disease / pathogen-driven mortality",
+                  "leaf": true
+                }
+              },
+              "fail": {
+                "feature": "High Do",
+                "decision": "D30 â€“ Legacy low survival (past event todayâ€™s water & deaths normal)",
+                "cost": 1,
+                "pass": {
+                  "decision": "D30 â€“ Legacy low survival (past event todayâ€™s water & deaths normal)",
+                  "leaf": true
+                },
+                "fail": {
+                  "decision": "D42 â€“ Historical poor SR (legacy issue current env & deaths OK)",
+                  "leaf": true
+                }
+              }
+            }
+          }
+        },
+        "fail": {
+          "feature": "Low DO",
+          "decision": "D0 â€“ Generic Low DO event (cause unknown)",
+          "cost": 1,
+          "pass": {
+            "feature": "High Pump",
+            "decision": "D0 â€“ Generic Low DO event (cause unknown)",
+            "cost": 1,
+            "pass": {
+              "feature": "High Do",
+              "decision": "D16 â€“ Heat stress (high temp + Oâ‚‚ demand)",
+              "cost": 1,
+              "pass": {
+                "decision": "D16 â€“ Heat stress (high temp + Oâ‚‚ demand)",
+                "leaf": true
+              },
+              "fail": {
+                "feature": "Low Temp",
+                "decision": "D24 â€“ Low DO + low pH with modest feed: carbon overdose / heavy floc",
+                "cost": 1,
+                "pass": {
+                  "decision": "D57 â€“ Early Cycle Microbial Instability",
+                  "leaf": true
+                },
+                "fail": {
+                  "decision": "D24 â€“ Low DO + low pH with modest feed: carbon overdose / heavy floc",
+                  "leaf": true
+                }
+              }
+            },
+            "fail": {
+              "decision": "D0 â€“ Generic Low DO event (cause unknown)",
+              "leaf": true
+            }
+          },
+          "fail": {
+            "feature": "High Death",
+            "decision": "D34 â€“ Near-capacity pond",
+            "cost": 1,
+            "pass": {
+              "feature": "High Pump",
+              "decision": "D34 â€“ Near-capacity pond",
+              "cost": 1,
+              "pass": {
+                "feature": "High Do",
+                "decision": "D32 â€“ Mild Low DO",
+                "cost": 1,
+                "pass": {
+                  "decision": "D32 â€“ Mild Low DO",
+                  "leaf": true
+                },
+                "fail": {
+                  "feature": "High pH",
+                  "decision": "D35 â€“ Low pH + heavy feeding",
+                  "cost": 1,
+                  "pass": {
+                    "decision": "D35 â€“ Low pH + heavy feeding",
+                    "leaf": true
+                  },
+                  "fail": {
+                    "decision": "D36 â€“ High pH only",
+                    "leaf": true
+                  }
+                }
+              },
+              "fail": {
+                "decision": "D34 â€“ Near-capacity pond",
+                "leaf": true
+              }
+            },
+            "fail": {
+              "feature": "High Pump",
+              "decision": "D9 â€“ High DO + high pH + high temp (photosynthesis / daytime spike)",
+              "cost": 1,
+              "pass": {
+                "feature": "Low Temp",
+                "decision": "D7 â€“ High DO from over-aeration at low biomass",
+                "cost": 1,
+                "pass": {
+                  "feature": "Low Pump",
+                  "decision": "D7 â€“ High DO from over-aeration at low biomass",
+                  "cost": 1,
+                  "pass": {
+                    "decision": "D7 â€“ High DO from over-aeration at low biomass",
+                    "leaf": true
+                  },
+                  "fail": {
+                    "decision": "D12 â€“ Over-aeration / gas supersaturation risk",
+                    "leaf": true
+                  }
+                },
+                "fail": {
+                  "feature": "High pH",
+                  "decision": "D21 â€“ Under-loaded system (too much aeration for biomass)",
+                  "cost": 1,
+                  "pass": {
+                    "decision": "D21 â€“ Under-loaded system (too much aeration for biomass)",
+                    "leaf": true
+                  },
+                  "fail": {
+                    "decision": "D44 â€“ Generic Nitrogen Accumulation",
+                    "leaf": true
+                  }
+                }
+              },
+              "fail": {
+                "feature": "High Do",
+                "decision": "D9 â€“ High DO + high pH + high temp (photosynthesis / daytime spike)",
+                "cost": 1,
+                "pass": {
+                  "decision": "D9 â€“ High DO + high pH + high temp (photosynthesis / daytime spike)",
+                  "leaf": true
+                },
+                "fail": {
+                  "feature": "Low Death",
+                  "decision": "D19 â€“ Overcrowding / high density stunting",
+                  "cost": 1,
+                  "pass": {
+                    "feature": "Low Weight",
+                    "decision": "D38 â€“ Good survival but operator underfeeding (conservative feeding)",
+                    "cost": 2,
+                    "pass": {
+                      "decision": "D39 â€“ Underfeeding at low biomass startup stocking too low",
+                      "leaf": true
+                    },
+                    "fail": {
+                      "decision": "D38 â€“ Good survival but operator underfeeding (conservative feeding)",
+                      "leaf": true
+                    }
+                  },
+                  "fail": {
+                    "decision": "D19 â€“ Overcrowding / high density stunting",
+                    "leaf": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "voi": {
+      "feature": "Low DO",
+      "decision": "D0 â€“ Generic Low DO event (cause unknown)",
+      "cost": 1,
+      "pass": {
+        "feature": "High Pump",
+        "decision": "D0 â€“ Generic Low DO event (cause unknown)",
+        "cost": 1,
+        "pass": {
+          "feature": "High Death",
+          "decision": "D27 â€“ Cage/flow restriction (blower OK but local low DO & deaths)",
+          "cost": 1,
+          "pass": {
+            "feature": "Low pH",
+            "decision": "D27 â€“ Cage/flow restriction (blower OK but local low DO & deaths)",
+            "cost": 1,
+            "pass": {
+              "feature": "High Do",
+              "decision": "D17 â€“ Overfeeding → organic overload",
+              "cost": 1,
+              "pass": {
+                "feature": "High Weight",
+                "decision": "D17 â€“ Overfeeding → organic overload",
+                "cost": 2,
+                "pass": {
+                  "decision": "D5 â€“ Low DO + low pH (alkalinity crash under heavy load)",
+                  "leaf": true
+                },
+                "fail": {
+                  "decision": "D17 â€“ Overfeeding → organic overload",
+                  "leaf": true
+                }
+              },
+              "fail": {
+                "feature": "Low Temp",
+                "decision": "D48 â€“ Algal Crash Post Spike",
+                "cost": 1,
+                "pass": {
+                  "decision": "D57 â€“ Early Cycle Microbial Instability",
+                  "leaf": true
+                },
+                "fail": {
+                  "feature": "Power Outage",
+                  "decision": "D48 â€“ Algal Crash Post Spike",
+                  "cost": 1,
+                  "pass": {
+                    "decision": "D48 â€“ Algal Crash Post Spike",
+                    "leaf": true
+                  },
+                  "fail": {
+                    "decision": "D58 â€“ Late Cycle Old Floc Syndrome",
+                    "leaf": true
+                  }
+                }
+              }
+            },
+            "fail": {
+              "feature": "High Temphh",
+              "decision": "D27 â€“ Cage/flow restriction (blower OK but local low DO & deaths)",
+              "cost": 1,
+              "pass": {
+                "feature": "High Do",
+                "decision": "D10 â€“ Oxygen demand overload (acute DO crisis)",
+                "cost": 1,
+                "pass": {
+                  "decision": "D10 â€“ Oxygen demand overload (acute DO crisis)",
+                  "leaf": true
+                },
+                "fail": {
+                  "feature": "Power Outage",
+                  "decision": "D47 â€“ Floc Collapse with DO Crash",
+                  "cost": 1,
+                  "pass": {
+                    "decision": "D47 â€“ Floc Collapse with DO Crash",
+                    "leaf": true
+                  },
+                  "fail": {
+                    "decision": "D52 â€“ Pump Cavitation / Air Restriction",
+                    "leaf": true
+                  }
+                }
+              },
+              "fail": {
+                "decision": "D27 â€“ Cage/flow restriction (blower OK but local low DO & deaths)",
+                "leaf": true
+              }
+            }
+          },
+          "fail": {
+            "feature": "High Do",
+            "decision": "D16 â€“ Heat stress (high temp + Oâ‚‚ demand)",
+            "cost": 1,
+            "pass": {
+              "feature": "Low Pump",
+              "decision": "D16 â€“ Heat stress (high temp + Oâ‚‚ demand)",
+              "cost": 1,
+              "pass": {
+                "decision": "D16 â€“ Heat stress (high temp + Oâ‚‚ demand)",
+                "leaf": true
+              },
+              "fail": {
+                "decision": "D3 â€“ Low DO due to overfeeding & high biomass (organic overload)",
+                "leaf": true
+              }
+            },
+            "fail": {
+              "feature": "Low Death",
+              "decision": "D25 â€“ Chronic borderline DO at high biomass (pre-failure)",
+              "cost": 1,
+              "pass": {
+                "feature": "High pH",
+                "decision": "D25 â€“ Chronic borderline DO at high biomass (pre-failure)",
+                "cost": 1,
+                "pass": {
+                  "decision": "D25 â€“ Chronic borderline DO at high biomass (pre-failure)",
+                  "leaf": true
+                },
+                "fail": {
+                  "decision": "D49 â€“ Old Sludge Oxygen Demand",
+                  "leaf": true
+                }
+              },
+              "fail": {
+                "feature": "Power Outage",
+                "decision": "D24 â€“ Low DO + low pH with modest feed: carbon overdose / heavy floc",
+                "cost": 1,
+                "pass": {
+                  "feature": "Low pH",
+                  "decision": "D46 â€“ Heterotrophic Bloom Carbon Overdose",
+                  "cost": 1,
+                  "pass": {
+                    "decision": "D46 â€“ Heterotrophic Bloom Carbon Overdose",
+                    "leaf": true
+                  },
+                  "fail": {
+                    "feature": "Low Temp",
+                    "decision": "D50 â€“ Thermal Stratification",
+                    "cost": 1,
+                    "pass": {
+                      "decision": "D50 â€“ Thermal Stratification",
+                      "leaf": true
+                    },
+                    "fail": {
+                      "decision": "D51 â€“ Oxygen Debt Post Feeding",
+                      "leaf": true
+                    }
+                  }
+                },
+                "fail": {
+                  "decision": "D24 â€“ Low DO + low pH with modest feed: carbon overdose / heavy floc",
+                  "leaf": true
+                }
+              }
+            }
+          }
+        },
+        "fail": {
+          "feature": "Low Pump",
+          "decision": "D0 â€“ Generic Low DO event (cause unknown)",
+          "cost": 1,
+          "pass": {
+            "feature": "High Do",
+            "decision": "D2 â€“ Low DO due to blower setting too low for biomass",
+            "cost": 1,
+            "pass": {
+              "feature": "Low Death",
+              "decision": "D2 â€“ Low DO due to blower setting too low for biomass",
+              "cost": 1,
+              "pass": {
+                "decision": "D11 â€“ Aeration underset (blower setting too low)",
+                "leaf": true
+              },
+              "fail": {
+                "decision": "D2 â€“ Low DO due to blower setting too low for biomass",
+                "leaf": true
+              }
+            },
+            "fail": {
+              "decision": "D53 â€“ Undersized Blower Structural Limit",
+              "leaf": true
+            }
+          },
+          "fail": {
+            "feature": "High Death",
+            "decision": "D0 â€“ Generic Low DO event (cause unknown)",
+            "cost": 1,
+            "pass": {
+              "decision": "D33 â€“ Acute Low DO with sharp mortality spike",
+              "leaf": true
+            },
+            "fail": {
+              "feature": "High Do",
+              "decision": "D0 â€“ Generic Low DO event (cause unknown)",
+              "cost": 1,
+              "pass": {
+                "decision": "D0 â€“ Generic Low DO event (cause unknown)",
+                "leaf": true
+              },
+              "fail": {
+                "decision": "D62 â€“ DO Sensor Offset",
+                "leaf": true
+              }
+            }
+          }
+        }
+      },
+      "fail": {
+        "feature": "High Death",
+        "decision": "D15 â€“ Cold stress (slow growth",
+        "cost": 1,
+        "pass": {
+          "feature": "High Feed",
+          "decision": "D15 â€“ Cold stress (slow growth",
+          "cost": 1,
+          "pass": {
+            "feature": "High Temphh",
+            "decision": "D15 â€“ Cold stress (slow growth",
+            "cost": 1,
+            "pass": {
+              "feature": "High Do",
+              "decision": "D15 â€“ Cold stress (slow growth",
+              "cost": 1,
+              "pass": {
+                "decision": "D15 â€“ Cold stress (slow growth",
+                "leaf": true
+              },
+              "fail": {
+                "decision": "D45 â€“ Suspected Nitrite Toxicity",
+                "leaf": true
+              }
+            },
+            "fail": {
+              "feature": "High pH",
+              "decision": "D18 â€“ Underfeeding (high DO",
+              "cost": 1,
+              "pass": {
+                "decision": "D18 â€“ Underfeeding (high DO",
+                "leaf": true
+              },
+              "fail": {
+                "feature": "High Do",
+                "decision": "D22 â€“ Early cycle",
+                "cost": 1,
+                "pass": {
+                  "feature": "High Pump",
+                  "decision": "D54 â€“ Cold Snap Low Appetite",
+                  "cost": 1,
+                  "pass": {
+                    "decision": "D59 â€“ Power Outage Lag Mortality",
+                    "leaf": true
+                  },
+                  "fail": {
+                    "decision": "D54 â€“ Cold Snap Low Appetite",
+                    "leaf": true
+                  }
+                },
+                "fail": {
+                  "decision": "D22 â€“ Early cycle",
+                  "leaf": true
+                }
+              }
+            }
+          },
+          "fail": {
+            "feature": "High Do",
+            "decision": "D34 â€“ Near-capacity pond",
+            "cost": 1,
+            "pass": {
+              "feature": "Low pH",
+              "decision": "D34 â€“ Near-capacity pond",
+              "cost": 1,
+              "pass": {
+                "decision": "D34 â€“ Near-capacity pond",
+                "leaf": true
+              },
+              "fail": {
+                "feature": "High Pump",
+                "decision": "D6 â€“ Apparent Low DO",
+                "cost": 1,
+                "pass": {
+                  "feature": "High pH",
+                  "decision": "D32 â€“ Mild Low DO",
+                  "cost": 1,
+                  "pass": {
+                    "decision": "D14 â€“ High pH + ammonia stress pattern",
+                    "leaf": true
+                  },
+                  "fail": {
+                    "decision": "D32 â€“ Mild Low DO",
+                    "leaf": true
+                  }
+                },
+                "fail": {
+                  "decision": "D6 â€“ Apparent Low DO",
+                  "leaf": true
+                }
+              }
+            },
+            "fail": {
+              "feature": "Low pH",
+              "decision": "D13 â€“ Alkalinity crash / pH too low",
+              "cost": 1,
+              "pass": {
+                "decision": "D13 â€“ Alkalinity crash / pH too low",
+                "leaf": true
+              },
+              "fail": {
+                "feature": "High pH",
+                "decision": "D20 â€“ Disease / pathogen-driven mortality",
+                "cost": 1,
+                "pass": {
+                  "feature": "Low Weight",
+                  "decision": "D35 â€“ Low pH + heavy feeding",
+                  "cost": 2,
+                  "pass": {
+                    "decision": "D35 â€“ Low pH + heavy feeding",
+                    "leaf": true
+                  },
+                  "fail": {
+                    "decision": "D37â€“ High pH + deaths with high feed (likely ammonia toxicity)",
+                    "leaf": true
+                  }
+                },
+                "fail": {
+                  "feature": "Low Temp",
+                  "decision": "D20 â€“ Disease / pathogen-driven mortality",
+                  "cost": 1,
+                  "pass": {
+                    "decision": "D36 â€“ High pH only",
+                    "leaf": true
+                  },
+                  "fail": {
+                    "feature": "Low Feed",
+                    "decision": "D20 â€“ Disease / pathogen-driven mortality",
+                    "cost": 1,
+                    "pass": {
+                      "decision": "D20 â€“ Disease / pathogen-driven mortality",
+                      "leaf": true
+                    },
+                    "fail": {
+                      "decision": "D23 â€“ Early-cycle overfeeding (low biomass",
+                      "leaf": true
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "fail": {
+          "feature": "Low Feed",
+          "decision": "D31 â€“ Feed distribution issue (fish not eating",
+          "cost": 1,
+          "pass": {
+            "feature": "Low Pump",
+            "decision": "D31 â€“ Feed distribution issue (fish not eating",
+            "cost": 1,
+            "pass": {
+              "feature": "High pH",
+              "decision": "D26 â€“ Handling/harvest stress (short-term deaths",
+              "cost": 1,
+              "pass": {
+                "feature": "High Do",
+                "decision": "D7 â€“ High DO from over-aeration at low biomass",
+                "cost": 1,
+                "pass": {
+                  "feature": "Low Temp",
+                  "decision": "D7 â€“ High DO from over-aeration at low biomass",
+                  "cost": 1,
+                  "pass": {
+                    "feature": "High Temphh",
+                    "decision": "D7 â€“ High DO from over-aeration at low biomass",
+                    "cost": 1,
+                    "pass": {
+                      "decision": "D12 â€“ Over-aeration / gas supersaturation risk",
+                      "leaf": true
+                    },
+                    "fail": {
+                      "decision": "D7 â€“ High DO from over-aeration at low biomass",
+                      "leaf": true
+                    }
+                  },
+                  "fail": {
+                    "decision": "D21 â€“ Under-loaded system (too much aeration for biomass)",
+                    "leaf": true
+                  }
+                },
+                "fail": {
+                  "feature": "Low Death",
+                  "decision": "D29 â€“ Hidden biomass / under-sampled weight (many fish",
+                  "cost": 1,
+                  "pass": {
+                    "decision": "D38 â€“ Good survival but operator underfeeding (conservative feeding)",
+                    "leaf": true
+                  },
+                  "fail": {
+                    "decision": "D29 â€“ Hidden biomass / under-sampled weight (many fish",
+                    "leaf": true
+                  }
+                }
+              },
+              "fail": {
+                "feature": "High Do",
+                "decision": "D26 â€“ Handling/harvest stress (short-term deaths",
+                "cost": 1,
+                "pass": {
+                  "decision": "D44 â€“ Generic Nitrogen Accumulation",
+                  "leaf": true
+                },
+                "fail": {
+                  "decision": "D26 â€“ Handling/harvest stress (short-term deaths",
+                  "leaf": true
+                }
+              }
+            },
+            "fail": {
+              "feature": "High Do",
+              "decision": "D31 â€“ Feed distribution issue (fish not eating",
+              "cost": 1,
+              "pass": {
+                "feature": "Low pH",
+                "decision": "D54 â€“ Underloaded Young Pond",
+                "cost": 1,
+                "pass": {
+                  "feature": "Low Temp",
+                  "decision": "D54 â€“ Underloaded Young Pond",
+                  "cost": 1,
+                  "pass": {
+                    "decision": "D54 â€“ Underloaded Young Pond",
+                    "leaf": true
+                  },
+                  "fail": {
+                    "decision": "D61 â€“ Chronic Low Level Stress",
+                    "leaf": true
+                  }
+                },
+                "fail": {
+                  "feature": "Power Outage",
+                  "decision": "D55 â€“ Heat Wave DO Managed",
+                  "cost": 1,
+                  "pass": {
+                    "decision": "D56 â€“ High Density Growth Stunting",
+                    "leaf": true
+                  },
+                  "fail": {
+                    "decision": "D55 â€“ Heat Wave DO Managed",
+                    "leaf": true
+                  }
+                }
+              },
+              "fail": {
+                "decision": "D31 â€“ Feed distribution issue (fish not eating",
+                "leaf": true
+              }
+            }
+          },
+          "fail": {
+            "feature": "High Do",
+            "decision": "D28 â€“ Mechanical aeration failure (blower/inlet problem",
+            "cost": 1,
+            "pass": {
+              "feature": "Low Pump",
+              "decision": "D28 â€“ Mechanical aeration failure (blower/inlet problem",
+              "cost": 1,
+              "pass": {
+                "feature": "High Pump",
+                "decision": "D8 â€“ High DO due to oversized aeration for high biomass (inefficient)",
+                "cost": 1,
+                "pass": {
+                  "decision": "D8 â€“ High DO due to oversized aeration for high biomass (inefficient)",
+                  "leaf": true
+                },
+                "fail": {
+                  "decision": "D9 â€“ High DO + high pH + high temp (photosynthesis / daytime spike)",
+                  "leaf": true
+                }
+              },
+              "fail": {
+                "feature": "High Pump",
+                "decision": "D28 â€“ Mechanical aeration failure (blower/inlet problem",
+                "cost": 1,
+                "pass": {
+                  "decision": "D28 â€“ Mechanical aeration failure (blower/inlet problem",
+                  "leaf": true
+                },
+                "fail": {
+                  "decision": "D60 â€“ Post Treatment Stress",
+                  "leaf": true
+                }
+              }
+            },
+            "fail": {
+              "feature": "Low pH",
+              "decision": "D30 â€“ Legacy low survival (past event todayâ€™s water & deaths normal)",
+              "cost": 1,
+              "pass": {
+                "feature": "Low Death",
+                "decision": "D19 â€“ Overcrowding / high density stunting",
+                "cost": 1,
+                "pass": {
+                  "decision": "D39 â€“ Underfeeding at low biomass startup stocking too low",
+                  "leaf": true
+                },
+                "fail": {
+                  "feature": "High Feed",
+                  "decision": "D19 â€“ Overcrowding / high density stunting",
+                  "cost": 1,
+                  "pass": {
+                    "feature": "Low Weight",
+                    "decision": "D19 â€“ Overcrowding / high density stunting",
+                    "cost": 2,
+                    "pass": {
+                      "decision": "D19 â€“ Overcrowding / high density stunting",
+                      "leaf": true
+                    },
+                    "fail": {
+                      "decision": "D41 â€“ Post-outage bounce: deaths from earlier event",
+                      "leaf": true
+                    }
+                  },
+                  "fail": {
+                    "decision": "D40 â€“ Heavy biomass and deaths",
+                    "leaf": true
+                  }
+                }
+              },
+              "fail": {
+                "feature": "Low Weight",
+                "decision": "D30 â€“ Legacy low survival (past event todayâ€™s water & deaths normal)",
+                "cost": 2,
+                "pass": {
+                  "decision": "D30 â€“ Legacy low survival (past event todayâ€™s water & deaths normal)",
+                  "leaf": true
+                },
+                "fail": {
+                  "decision": "D42 â€“ Historical poor SR (legacy issue current env & deaths OK)",
+                  "leaf": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "eff": {
+      "feature": "Low DO",
+      "decision": "D0 â€“ Generic Low DO event (cause unknown)",
+      "cost": 1,
+      "pass": {
+        "feature": "High Pump",
+        "decision": "D0 â€“ Generic Low DO event (cause unknown)",
+        "cost": 1,
+        "pass": {
+          "feature": "High Death",
+          "decision": "D27 â€“ Cage/flow restriction (blower OK but local low DO & deaths)",
+          "cost": 1,
+          "pass": {
+            "feature": "Low pH",
+            "decision": "D27 â€“ Cage/flow restriction (blower OK but local low DO & deaths)",
+            "cost": 1,
+            "pass": {
+              "feature": "High Do",
+              "decision": "D17 â€“ Overfeeding → organic overload",
+              "cost": 1,
+              "pass": {
+                "feature": "High Weight",
+                "decision": "D17 â€“ Overfeeding → organic overload",
+                "cost": 2,
+                "pass": {
+                  "decision": "D5 â€“ Low DO + low pH (alkalinity crash under heavy load)",
+                  "leaf": true
+                },
+                "fail": {
+                  "decision": "D17 â€“ Overfeeding → organic overload",
+                  "leaf": true
+                }
+              },
+              "fail": {
+                "feature": "Low Temp",
+                "decision": "D48 â€“ Algal Crash Post Spike",
+                "cost": 1,
+                "pass": {
+                  "decision": "D57 â€“ Early Cycle Microbial Instability",
+                  "leaf": true
+                },
+                "fail": {
+                  "feature": "Power Outage",
+                  "decision": "D48 â€“ Algal Crash Post Spike",
+                  "cost": 1,
+                  "pass": {
+                    "decision": "D48 â€“ Algal Crash Post Spike",
+                    "leaf": true
+                  },
+                  "fail": {
+                    "decision": "D58 â€“ Late Cycle Old Floc Syndrome",
+                    "leaf": true
+                  }
+                }
+              }
+            },
+            "fail": {
+              "feature": "High Temphh",
+              "decision": "D27 â€“ Cage/flow restriction (blower OK but local low DO & deaths)",
+              "cost": 1,
+              "pass": {
+                "feature": "High Do",
+                "decision": "D10 â€“ Oxygen demand overload (acute DO crisis)",
+                "cost": 1,
+                "pass": {
+                  "decision": "D10 â€“ Oxygen demand overload (acute DO crisis)",
+                  "leaf": true
+                },
+                "fail": {
+                  "feature": "Power Outage",
+                  "decision": "D47 â€“ Floc Collapse with DO Crash",
+                  "cost": 1,
+                  "pass": {
+                    "decision": "D47 â€“ Floc Collapse with DO Crash",
+                    "leaf": true
+                  },
+                  "fail": {
+                    "decision": "D52 â€“ Pump Cavitation / Air Restriction",
+                    "leaf": true
+                  }
+                }
+              },
+              "fail": {
+                "decision": "D27 â€“ Cage/flow restriction (blower OK but local low DO & deaths)",
+                "leaf": true
+              }
+            }
+          },
+          "fail": {
+            "feature": "High Do",
+            "decision": "D16 â€“ Heat stress (high temp + Oâ‚‚ demand)",
+            "cost": 1,
+            "pass": {
+              "feature": "Low Pump",
+              "decision": "D16 â€“ Heat stress (high temp + Oâ‚‚ demand)",
+              "cost": 1,
+              "pass": {
+                "decision": "D16 â€“ Heat stress (high temp + Oâ‚‚ demand)",
+                "leaf": true
+              },
+              "fail": {
+                "decision": "D3 â€“ Low DO due to overfeeding & high biomass (organic overload)",
+                "leaf": true
+              }
+            },
+            "fail": {
+              "feature": "Low Death",
+              "decision": "D25 â€“ Chronic borderline DO at high biomass (pre-failure)",
+              "cost": 1,
+              "pass": {
+                "feature": "High pH",
+                "decision": "D25 â€“ Chronic borderline DO at high biomass (pre-failure)",
+                "cost": 1,
+                "pass": {
+                  "decision": "D25 â€“ Chronic borderline DO at high biomass (pre-failure)",
+                  "leaf": true
+                },
+                "fail": {
+                  "decision": "D49 â€“ Old Sludge Oxygen Demand",
+                  "leaf": true
+                }
+              },
+              "fail": {
+                "feature": "Power Outage",
+                "decision": "D24 â€“ Low DO + low pH with modest feed: carbon overdose / heavy floc",
+                "cost": 1,
+                "pass": {
+                  "feature": "Low pH",
+                  "decision": "D46 â€“ Heterotrophic Bloom Carbon Overdose",
+                  "cost": 1,
+                  "pass": {
+                    "decision": "D46 â€“ Heterotrophic Bloom Carbon Overdose",
+                    "leaf": true
+                  },
+                  "fail": {
+                    "feature": "Low Temp",
+                    "decision": "D50 â€“ Thermal Stratification",
+                    "cost": 1,
+                    "pass": {
+                      "decision": "D50 â€“ Thermal Stratification",
+                      "leaf": true
+                    },
+                    "fail": {
+                      "decision": "D51 â€“ Oxygen Debt Post Feeding",
+                      "leaf": true
+                    }
+                  }
+                },
+                "fail": {
+                  "decision": "D24 â€“ Low DO + low pH with modest feed: carbon overdose / heavy floc",
+                  "leaf": true
+                }
+              }
+            }
+          }
+        },
+        "fail": {
+          "feature": "Low Pump",
+          "decision": "D0 â€“ Generic Low DO event (cause unknown)",
+          "cost": 1,
+          "pass": {
+            "feature": "High Do",
+            "decision": "D2 â€“ Low DO due to blower setting too low for biomass",
+            "cost": 1,
+            "pass": {
+              "feature": "Low Death",
+              "decision": "D2 â€“ Low DO due to blower setting too low for biomass",
+              "cost": 1,
+              "pass": {
+                "decision": "D11 â€“ Aeration underset (blower setting too low)",
+                "leaf": true
+              },
+              "fail": {
+                "decision": "D2 â€“ Low DO due to blower setting too low for biomass",
+                "leaf": true
+              }
+            },
+            "fail": {
+              "decision": "D53 â€“ Undersized Blower Structural Limit",
+              "leaf": true
+            }
+          },
+          "fail": {
+            "feature": "High Death",
+            "decision": "D0 â€“ Generic Low DO event (cause unknown)",
+            "cost": 1,
+            "pass": {
+              "decision": "D33 â€“ Acute Low DO with sharp mortality spike",
+              "leaf": true
+            },
+            "fail": {
+              "feature": "High Do",
+              "decision": "D0 â€“ Generic Low DO event (cause unknown)",
+              "cost": 1,
+              "pass": {
+                "decision": "D0 â€“ Generic Low DO event (cause unknown)",
+                "leaf": true
+              },
+              "fail": {
+                "decision": "D62 â€“ DO Sensor Offset",
+                "leaf": true
+              }
+            }
+          }
+        }
+      },
+      "fail": {
+        "feature": "High Death",
+        "decision": "D15 â€“ Cold stress (slow growth",
+        "cost": 1,
+        "pass": {
+          "feature": "High Feed",
+          "decision": "D15 â€“ Cold stress (slow growth",
+          "cost": 1,
+          "pass": {
+            "feature": "High Temphh",
+            "decision": "D15 â€“ Cold stress (slow growth",
+            "cost": 1,
+            "pass": {
+              "feature": "High Do",
+              "decision": "D15 â€“ Cold stress (slow growth",
+              "cost": 1,
+              "pass": {
+                "decision": "D15 â€“ Cold stress (slow growth",
+                "leaf": true
+              },
+              "fail": {
+                "decision": "D45 â€“ Suspected Nitrite Toxicity",
+                "leaf": true
+              }
+            },
+            "fail": {
+              "feature": "High pH",
+              "decision": "D18 â€“ Underfeeding (high DO",
+              "cost": 1,
+              "pass": {
+                "decision": "D18 â€“ Underfeeding (high DO",
+                "leaf": true
+              },
+              "fail": {
+                "feature": "High Do",
+                "decision": "D22 â€“ Early cycle",
+                "cost": 1,
+                "pass": {
+                  "feature": "High Pump",
+                  "decision": "D54 â€“ Cold Snap Low Appetite",
+                  "cost": 1,
+                  "pass": {
+                    "decision": "D59 â€“ Power Outage Lag Mortality",
+                    "leaf": true
+                  },
+                  "fail": {
+                    "decision": "D54 â€“ Cold Snap Low Appetite",
+                    "leaf": true
+                  }
+                },
+                "fail": {
+                  "decision": "D22 â€“ Early cycle",
+                  "leaf": true
+                }
+              }
+            }
+          },
+          "fail": {
+            "feature": "High Do",
+            "decision": "D34 â€“ Near-capacity pond",
+            "cost": 1,
+            "pass": {
+              "feature": "Low pH",
+              "decision": "D34 â€“ Near-capacity pond",
+              "cost": 1,
+              "pass": {
+                "decision": "D34 â€“ Near-capacity pond",
+                "leaf": true
+              },
+              "fail": {
+                "feature": "High Pump",
+                "decision": "D6 â€“ Apparent Low DO",
+                "cost": 1,
+                "pass": {
+                  "feature": "High pH",
+                  "decision": "D32 â€“ Mild Low DO",
+                  "cost": 1,
+                  "pass": {
+                    "decision": "D14 â€“ High pH + ammonia stress pattern",
+                    "leaf": true
+                  },
+                  "fail": {
+                    "decision": "D32 â€“ Mild Low DO",
+                    "leaf": true
+                  }
+                },
+                "fail": {
+                  "decision": "D6 â€“ Apparent Low DO",
+                  "leaf": true
+                }
+              }
+            },
+            "fail": {
+              "feature": "Low pH",
+              "decision": "D13 â€“ Alkalinity crash / pH too low",
+              "cost": 1,
+              "pass": {
+                "decision": "D13 â€“ Alkalinity crash / pH too low",
+                "leaf": true
+              },
+              "fail": {
+                "feature": "High pH",
+                "decision": "D20 â€“ Disease / pathogen-driven mortality",
+                "cost": 1,
+                "pass": {
+                  "feature": "Low Weight",
+                  "decision": "D35 â€“ Low pH + heavy feeding",
+                  "cost": 2,
+                  "pass": {
+                    "decision": "D35 â€“ Low pH + heavy feeding",
+                    "leaf": true
+                  },
+                  "fail": {
+                    "decision": "D37â€“ High pH + deaths with high feed (likely ammonia toxicity)",
+                    "leaf": true
+                  }
+                },
+                "fail": {
+                  "feature": "Low Temp",
+                  "decision": "D20 â€“ Disease / pathogen-driven mortality",
+                  "cost": 1,
+                  "pass": {
+                    "decision": "D36 â€“ High pH only",
+                    "leaf": true
+                  },
+                  "fail": {
+                    "feature": "Low Feed",
+                    "decision": "D20 â€“ Disease / pathogen-driven mortality",
+                    "cost": 1,
+                    "pass": {
+                      "decision": "D20 â€“ Disease / pathogen-driven mortality",
+                      "leaf": true
+                    },
+                    "fail": {
+                      "decision": "D23 â€“ Early-cycle overfeeding (low biomass",
+                      "leaf": true
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "fail": {
+          "feature": "Low Feed",
+          "decision": "D31 â€“ Feed distribution issue (fish not eating",
+          "cost": 1,
+          "pass": {
+            "feature": "Low Pump",
+            "decision": "D31 â€“ Feed distribution issue (fish not eating",
+            "cost": 1,
+            "pass": {
+              "feature": "High pH",
+              "decision": "D26 â€“ Handling/harvest stress (short-term deaths",
+              "cost": 1,
+              "pass": {
+                "feature": "High Do",
+                "decision": "D7 â€“ High DO from over-aeration at low biomass",
+                "cost": 1,
+                "pass": {
+                  "feature": "Low Temp",
+                  "decision": "D7 â€“ High DO from over-aeration at low biomass",
+                  "cost": 1,
+                  "pass": {
+                    "feature": "High Temphh",
+                    "decision": "D7 â€“ High DO from over-aeration at low biomass",
+                    "cost": 1,
+                    "pass": {
+                      "decision": "D12 â€“ Over-aeration / gas supersaturation risk",
+                      "leaf": true
+                    },
+                    "fail": {
+                      "decision": "D7 â€“ High DO from over-aeration at low biomass",
+                      "leaf": true
+                    }
+                  },
+                  "fail": {
+                    "decision": "D21 â€“ Under-loaded system (too much aeration for biomass)",
+                    "leaf": true
+                  }
+                },
+                "fail": {
+                  "feature": "Low Death",
+                  "decision": "D29 â€“ Hidden biomass / under-sampled weight (many fish",
+                  "cost": 1,
+                  "pass": {
+                    "decision": "D38 â€“ Good survival but operator underfeeding (conservative feeding)",
+                    "leaf": true
+                  },
+                  "fail": {
+                    "decision": "D29 â€“ Hidden biomass / under-sampled weight (many fish",
+                    "leaf": true
+                  }
+                }
+              },
+              "fail": {
+                "feature": "High Do",
+                "decision": "D26 â€“ Handling/harvest stress (short-term deaths",
+                "cost": 1,
+                "pass": {
+                  "decision": "D44 â€“ Generic Nitrogen Accumulation",
+                  "leaf": true
+                },
+                "fail": {
+                  "decision": "D26 â€“ Handling/harvest stress (short-term deaths",
+                  "leaf": true
+                }
+              }
+            },
+            "fail": {
+              "feature": "High Do",
+              "decision": "D31 â€“ Feed distribution issue (fish not eating",
+              "cost": 1,
+              "pass": {
+                "feature": "Low pH",
+                "decision": "D54 â€“ Underloaded Young Pond",
+                "cost": 1,
+                "pass": {
+                  "feature": "Low Temp",
+                  "decision": "D54 â€“ Underloaded Young Pond",
+                  "cost": 1,
+                  "pass": {
+                    "decision": "D54 â€“ Underloaded Young Pond",
+                    "leaf": true
+                  },
+                  "fail": {
+                    "decision": "D61 â€“ Chronic Low Level Stress",
+                    "leaf": true
+                  }
+                },
+                "fail": {
+                  "feature": "Power Outage",
+                  "decision": "D55 â€“ Heat Wave DO Managed",
+                  "cost": 1,
+                  "pass": {
+                    "decision": "D56 â€“ High Density Growth Stunting",
+                    "leaf": true
+                  },
+                  "fail": {
+                    "decision": "D55 â€“ Heat Wave DO Managed",
+                    "leaf": true
+                  }
+                }
+              },
+              "fail": {
+                "decision": "D31 â€“ Feed distribution issue (fish not eating",
+                "leaf": true
+              }
+            }
+          },
+          "fail": {
+            "feature": "High Do",
+            "decision": "D28 â€“ Mechanical aeration failure (blower/inlet problem",
+            "cost": 1,
+            "pass": {
+              "feature": "Low Pump",
+              "decision": "D28 â€“ Mechanical aeration failure (blower/inlet problem",
+              "cost": 1,
+              "pass": {
+                "feature": "High Pump",
+                "decision": "D8 â€“ High DO due to oversized aeration for high biomass (inefficient)",
+                "cost": 1,
+                "pass": {
+                  "decision": "D8 â€“ High DO due to oversized aeration for high biomass (inefficient)",
+                  "leaf": true
+                },
+                "fail": {
+                  "decision": "D9 â€“ High DO + high pH + high temp (photosynthesis / daytime spike)",
+                  "leaf": true
+                }
+              },
+              "fail": {
+                "feature": "High Pump",
+                "decision": "D28 â€“ Mechanical aeration failure (blower/inlet problem",
+                "cost": 1,
+                "pass": {
+                  "decision": "D28 â€“ Mechanical aeration failure (blower/inlet problem",
+                  "leaf": true
+                },
+                "fail": {
+                  "decision": "D60 â€“ Post Treatment Stress",
+                  "leaf": true
+                }
+              }
+            },
+            "fail": {
+              "feature": "Low pH",
+              "decision": "D30 â€“ Legacy low survival (past event todayâ€™s water & deaths normal)",
+              "cost": 1,
+              "pass": {
+                "feature": "Low Death",
+                "decision": "D19 â€“ Overcrowding / high density stunting",
+                "cost": 1,
+                "pass": {
+                  "decision": "D39 â€“ Underfeeding at low biomass startup stocking too low",
+                  "leaf": true
+                },
+                "fail": {
+                  "feature": "High Feed",
+                  "decision": "D19 â€“ Overcrowding / high density stunting",
+                  "cost": 1,
+                  "pass": {
+                    "feature": "Low Weight",
+                    "decision": "D19 â€“ Overcrowding / high density stunting",
+                    "cost": 2,
+                    "pass": {
+                      "decision": "D19 â€“ Overcrowding / high density stunting",
+                      "leaf": true
+                    },
+                    "fail": {
+                      "decision": "D41 â€“ Post-outage bounce: deaths from earlier event",
+                      "leaf": true
+                    }
+                  },
+                  "fail": {
+                    "decision": "D40 â€“ Heavy biomass and deaths",
+                    "leaf": true
+                  }
+                }
+              },
+              "fail": {
+                "feature": "Low Weight",
+                "decision": "D30 â€“ Legacy low survival (past event todayâ€™s water & deaths normal)",
+                "cost": 2,
+                "pass": {
+                  "decision": "D30 â€“ Legacy low survival (past event todayâ€™s water & deaths normal)",
+                  "leaf": true
+                },
+                "fail": {
+                  "decision": "D42 â€“ Historical poor SR (legacy issue current env & deaths OK)",
+                  "leaf": true
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "headers": [
+    "Low DO",
+    "High Do",
+    "Low Pump",
+    "High Pump",
+    "Low pH",
+    "High pH",
+    "Low Temp",
+    "High Temphh",
+    "Low Death",
+    "High Death",
+    "Low SR",
+    "High SR",
+    "Low Weight",
+    "High Weight",
+    "Low Feed",
+    "High Feed",
+    "Power Outage",
+    "High Biomass",
+    "Cost ($)"
+  ]
+};
+    
+    let treeData = null;
+    let currentAlgo = 'eff';
+    let scale = 1.0;
+    let panX = 0, panY = 0;
+    let isPanning = false;
+    let startX, startY;
+    
+    function loadData() {
+      try {
+        treeData = JSON.parse(TREE_DATA_JSON);
+        renderTree(currentAlgo);
+      } catch(e) {
+        document.getElementById('treeContent').innerHTML =
+          '<div class="text-red-400 p-8">Error: ' + e.message + '</div>';
+      }
+    }
+    
+    // ===== STATS =====
+    function countLeaves(node) {
+      if (!node || node.leaf) return 1;
+      return countLeaves(node.pass) + countLeaves(node.fail);
+    }
+    function getDepth(node, d) {
+      if (!node || node.leaf) return d;
+      return Math.max(getDepth(node.pass, d+1), getDepth(node.fail, d+1));
+    }
+    
+    // ===== RENDER TREE =====
+    function renderTree(algo) {
+      currentAlgo = algo;
+      const tree = treeData.trees[algo];
+      if (!tree) return;
+      
+      const labels = { eff: 'Efficiency (Gain²/Cost)', id3: 'ID3 (Classic)', voi: 'VOI (Cost-Sensitive)' };
+      document.getElementById('mode-label').textContent = labels[algo];
+      document.getElementById('stat-root').textContent = tree.feature || tree.decision;
+      document.getElementById('stat-leaves').textContent = countLeaves(tree);
+      document.getElementById('stat-depth').textContent = getDepth(tree, 0);
+      
+      const content = document.getElementById('treeContent');
+      content.innerHTML = '';
+      const el = buildNodeEl(tree);
+      content.appendChild(el);
+      
+      // Reset pan/zoom
+      scale = 0.8; panX = 0; panY = 0;
+      applyTransform();
+    }
+    
+    function buildNodeEl(node) {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'node-wrapper';
+      
+      if (!node || node.leaf) {
+        // Leaf
+        const box = document.createElement('div');
+        box.className = 'leaf-box';
+        box.textContent = node ? node.decision : 'Unknown';
+        wrapper.appendChild(box);
+        return wrapper;
+      }
+      
+      // Feature split node
+      const topLine = document.createElement('div');
+      topLine.className = 'v-line';
+      wrapper.appendChild(topLine);
+      
+      const nodeBox = document.createElement('div');
+      nodeBox.className = 'node-box';
+      nodeBox.textContent = node.feature;
+      wrapper.appendChild(nodeBox);
+      
+      const bottomLine = document.createElement('div');
+      bottomLine.className = 'v-line';
+      wrapper.appendChild(bottomLine);
+      
+      // Children row
+      const childRow = document.createElement('div');
+      childRow.className = 'children-row';
+      
+      // PASS child
+      const passCol = document.createElement('div');
+      passCol.className = 'branch-col';
+      const passBadge = document.createElement('div');
+      passBadge.className = 'branch-badge badge-pass';
+      passBadge.textContent = 'PASS';
+      passCol.appendChild(passBadge);
+      const passLine = document.createElement('div');
+      passLine.className = 'v-line';
+      passCol.appendChild(passLine);
+      if (node.pass) passCol.appendChild(buildNodeEl(node.pass));
+      childRow.appendChild(passCol);
+      
+      // FAIL child
+      const failCol = document.createElement('div');
+      failCol.className = 'branch-col';
+      const failBadge = document.createElement('div');
+      failBadge.className = 'branch-badge badge-fail';
+      failBadge.textContent = 'FAIL';
+      failCol.appendChild(failBadge);
+      const failLine = document.createElement('div');
+      failLine.className = 'v-line';
+      failCol.appendChild(failLine);
+      if (node.fail) failCol.appendChild(buildNodeEl(node.fail));
+      childRow.appendChild(failCol);
+      
+      wrapper.appendChild(childRow);
+      return wrapper;
+    }
+    
+    // ===== ZOOM & PAN =====
+    function applyTransform() {
+      const content = document.getElementById('treeContent');
+      content.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+      content.style.transformOrigin = 'top center';
+      document.getElementById('zoom-label').textContent = Math.round(scale * 100) + '%';
+    }
+    
+    function zoomBy(delta) {
+      scale = Math.max(0.1, Math.min(3.0, scale + delta));
+      applyTransform();
+    }
+    
+    document.getElementById('btn-in').onclick = () => zoomBy(0.15);
+    document.getElementById('btn-out').onclick = () => zoomBy(-0.15);
+    document.getElementById('btn-reset').onclick = () => {
+      scale = 0.8; panX = 0; panY = 0; applyTransform();
+    };
+    
+    const vp = document.getElementById('treeViewport');
+    vp.addEventListener('wheel', e => {
+      e.preventDefault();
+      zoomBy(e.deltaY > 0 ? -0.1 : 0.1);
+    }, { passive: false });
+    
+    vp.addEventListener('mousedown', e => {
+      isPanning = true; startX = e.clientX - panX; startY = e.clientY - panY;
+    });
+    vp.addEventListener('mousemove', e => {
+      if (!isPanning) return;
+      panX = e.clientX - startX; panY = e.clientY - startY; applyTransform();
+    });
+    vp.addEventListener('mouseup', () => isPanning = false);
+    vp.addEventListener('mouseleave', () => isPanning = false);
+    
+    // ===== ALGO TAB SWITCH =====
+    function switchAlgo(algo, btn) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderTree(algo);
+    }
+    
+    // ===== BOOT =====
+    loadData();
+  </script>
+</body>
+</html>
